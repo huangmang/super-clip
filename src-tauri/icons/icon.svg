@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Bold Gradient for high clarity -->
+    <linearGradient id="bg_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366F1"/> <!-- Indigo-500 -->
+      <stop offset="100%" style="stop-color:#A855F7"/> <!-- Purple-500 -->
+    </linearGradient>
+    <filter id="os_shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect x="80" y="80" width="864" height="864" rx="200" ry="200" fill="url(#bg_grad)" filter="url(#os_shadow)"/>
+
+  <!-- Simplified, Bold Clipboard Board -->
+  <rect x="280" y="320" width="464" height="540" rx="40" ry="40" fill="white" fill-opacity="0.15" stroke="white" stroke-width="4"/>
+
+  <!-- Bold metallic clip -->
+  <rect x="380" y="240" width="264" height="140" rx="35" ry="35" fill="white" filter="url(#os_shadow)"/>
+  
+  <!-- Subtle accent line -->
+  <rect x="330" y="440" width="364" height="40" rx="20" ry="20" fill="white" fill-opacity="0.9"/>
+  <rect x="330" y="540" width="300" height="40" rx="20" ry="20" fill="white" fill-opacity="0.7"/>
+  <rect x="330" y="640" width="340" height="40" rx="20" ry="20" fill="white" fill-opacity="0.7"/>
+  <rect x="330" y="740" width="200" height="40" rx="20" ry="20" fill="white" fill-opacity="0.5"/>
+</svg>

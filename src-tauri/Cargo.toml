@@ -1,0 +1,52 @@
+[package]
+name = "super-clip"
+version = "0.2.1"
+description = "A full-platform clipboard manager"
+authors = ["Your Name"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = [ "fs-read-file", "protocol-asset", "dialog-all", "global-shortcut-all", "window-all", "system-tray", "global-shortcut", "shell-open"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+arboard = "3" # Cross-platform clipboard
+rusqlite = { version = "0.29", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+image = "0.24" # Image processing
+base64 = "0.21"
+sha2 = "0.10" # Hashing for deduplication
+url = "2.5" # URL parsing
+tauri-plugin-autostart = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" } # Autostart plugin for v1
+urlencoding = "2.1"
+ort = { version = "2.0.0-rc.11", features = ["tls-native", "ndarray"] }
+ndarray = "0.15"
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "4.5" # Windows specific clipboard handling for files
+windows = { version = "0.52", features = [
+    "Media_Ocr",
+    "Globalization",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Foundation",
+    "Foundation_Collections",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+    "Win32_System_Ole"
+] }
+everything-sdk = "0.0.6"
+
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

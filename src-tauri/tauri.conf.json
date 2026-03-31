@@ -1,0 +1,104 @@
+{
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "beforeBuildCommand": "npm run build",
+        "devPath": "http://localhost:5173",
+        "distDir": "../dist",
+        "withGlobalTauri": false
+    },
+    "package": {
+        "productName": "super-clip",
+        "version": "0.2.3"
+    },
+    "tauri": {
+        "allowlist": {
+            "all": false,
+            "shell": {
+                "all": false,
+                "open": true
+            },
+            "dialog": {
+                "all": true
+            },
+            "globalShortcut": {
+                "all": true
+            },
+            "window": {
+                "all": true
+            },
+            "fs": {
+                "all": false,
+                "readFile": true,
+                "scope": [
+                    "$APPDATA/**"
+                ]
+            },
+            "protocol": {
+                "asset": true,
+                "assetScope": [
+                    "$APPDATA/**"
+                ]
+            }
+        },
+        "bundle": {
+            "active": true,
+            "category": "Utility",
+            "copyright": "Copyright © 2026",
+            "deb": {
+                "depends": []
+            },
+            "externalBin": [],
+            "icon": [
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png",
+                "icons/icon.icns",
+                "icons/icon.ico"
+            ],
+            "identifier": "com.super-clip.dev",
+            "longDescription": "A powerful cross-platform clipboard manager that helps you manage your clipboard history efficiently.",
+            "macOS": {
+                "entitlements": null,
+                "exceptionDomain": "",
+                "frameworks": [],
+                "providerShortName": null,
+                "signingIdentity": null
+            },
+            "resources": [],
+            "shortDescription": "Cross-platform clipboard manager",
+            "targets": "all",
+            "windows": {
+                "certificateThumbprint": null,
+                "digestAlgorithm": "sha256",
+                "timestampUrl": "",
+                "wix": {
+                    "language": "zh-CN"
+                }
+            }
+        },
+        "security": {
+            "csp": null
+        },
+        "updater": {
+            "active": false
+        },
+        "windows": [
+                {
+                    "fullscreen": false,
+                    "resizable": true,
+                    "title": "Super Clip",
+                    "width": 800,
+                    "height": 600,
+                    "center": true,
+                    "visible": true,
+                    "decorations": false,
+                    "transparent": false
+                }
+            ],
+        "systemTray": {
+            "iconPath": "icons/32x32.png",
+            "iconAsTemplate": false,
+            "menuOnLeftClick": true
+        }
+    }
+}
