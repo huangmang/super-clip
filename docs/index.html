@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Clip · The Ultimate Efficiency Core</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    colors: {
+                        graphite: '#0D1117',
+                        electric: '#58A6FF',
+                        accentDark: '#161b22',
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'breathe': 'breathe 4s ease-in-out infinite',
+                        'spin-slow': 'spin 12s linear infinite',
+                        'slide-up': 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-20px)' },
+                        },
+                        breathe: {
+                            '0%, 100%': { opacity: '0.8', transform: 'scale(0.95)' },
+                            '50%': { opacity: '1', transform: 'scale(1.05)' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(40px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --bg-color: #0D1117;
+            --panel-bg: rgba(22, 27, 34, 0.6);
+            --border-color: rgba(48, 54, 61, 0.6);
+            --electric: #58A6FF;
+        }
+        body { background-color: var(--bg-color); color: #f0f6fc; overflow-x: hidden; }
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--border-color);
+        }
+        .text-gradient {
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-image: linear-gradient(to right, #58A6FF, #a78bfa, #34d399);
+        }
+        .reveal { opacity: 0; transform: translateY(30px); transition: all 1s cubic-bezier(0.16, 1, 0.3, 1); }
+        .reveal.active { opacity: 1; transform: translateY(0); }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: rgba(88, 166, 255, 0.2); border-radius: 4px; }
+        
+        /* Grid background */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-electric/30 selection:text-white bg-grid">
+
+    <!-- Navbar -->
+    <nav class="fixed top-0 w-full z-50 glass-panel border-b-0 border-white/5 py-4">
+        <div class="max-w-7xl mx-auto px-6 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-6 h-6 rounded-full border-2 border-electric flex items-center justify-center animate-breathe shadow-[0_0_10px_rgba(88,166,255,0.4)]">
+                    <div class="w-2 h-2 bg-electric rounded-full animate-breathe" style="animation-delay: 0.5s"></div>
+                </div>
+                <span class="text-xl font-bold tracking-tight text-white">Super Clip <span class="text-xs text-electric ml-1 bg-electric/10 px-2 py-0.5 rounded-full border border-electric/20 text-shadow">v0.2.3</span></span>
+            </div>
+            <div class="flex items-center gap-6 text-sm font-medium">
+                <a href="#minimalist" class="text-gray-400 hover:text-white transition">极简搜索</a>
+                <a href="#ocr" class="text-gray-400 hover:text-white transition">离线OCR</a>
+                <a href="#dashboard" class="text-gray-400 hover:text-white transition">智能仪表板</a>
+                <a href="https://github.com/huangmang/super-clip" target="_blank" class="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition border border-white/10 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path></svg>
+                    Star on GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="relative pt-40 pb-32 overflow-hidden flex flex-col items-center justify-center min-h-[90vh]">
+        <!-- Glows -->
+        <div class="absolute top-1/4 left-1/4 w-[40vw] h-[40vw] rounded-full bg-electric/10 blur-[120px] pointer-events-none"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-[30vw] h-[30vw] rounded-full bg-purple-500/10 blur-[120px] pointer-events-none"></div>
+        
+        <div class="text-center z-10 px-6 max-w-4xl relative animate-slide-up">
+            <h1 class="text-6xl md:text-8xl font-black tracking-tighter mb-6 leading-tight">
+                超越剪贴。<br/>
+                <span class="text-gradient">原生级的生产力中枢。</span>
+            </h1>
+            <p class="text-xl md:text-2xl text-gray-400 font-medium mb-12 max-w-2xl mx-auto leading-relaxed">
+                放弃 Electron 的臃肿。基于 Rust 构建的深层操作系统扩展，集成 <strong class="text-emerald-400 font-semibold">Everything SDK</strong> 毫秒搜索与 <strong class="text-indigo-400 font-semibold">ONNX</strong> 离线视觉识别。完全免费，彻底开源。
+            </p>
+        </div>
+
+        <!-- Float Mockup (Minimalist Mode) -->
+        <div class="relative w-full max-w-2xl px-6 z-20 animate-float mt-4" style="perspective: 1000px;">
+            <div class="w-full rounded-[24px] overflow-hidden shadow-[0_40px_100px_rgba(88,166,255,0.15)] border border-white/10" 
+                 style="background: linear-gradient(180deg, rgba(10,10,18,0.97) 0%, rgba(15,15,25,0.98) 100%); backdrop-filter: blur(24px); transform: rotateX(5deg) scale(1.05);">
+                
+                <!-- Search Bar -->
+                <div class="px-6 pt-6 pb-2 border-b border-white/5">
+                    <div class="relative flex items-center mb-4 rounded-2xl border border-indigo-500/30 bg-indigo-500/5 shadow-[0_8px_32px_rgba(99,102,241,0.08)]">
+                        <svg class="absolute left-5 w-5 h-5 text-indigo-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <input type="text" value="System Design API" readonly class="w-full bg-transparent py-4 pl-12 pr-5 text-[15px] outline-none font-medium text-white" />
+                        <div class="absolute right-4 text-xs font-mono text-gray-500 opacity-50 border border-gray-600 rounded px-2 py-0.5">ESC</div>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div class="p-4 space-y-2">
+                    <!-- Hovered Item -->
+                    <div class="flex items-center gap-4 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 translate-x-1 transition-transform">
+                        <div class="w-8 h-8 rounded-lg bg-blue-600 shadow-[0_4px_12px_rgba(0,113,227,0.3)] flex items-center justify-center font-black text-white text-xs">1</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-white truncate">API Gateway Routing Strategies</div>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-blue-400 bg-blue-400/10">文档</span>
+                                <span class="text-[10px] text-gray-500">chrome.exe · 刚刚</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Standard Item -->
+                    <div class="flex items-center gap-4 px-4 py-3 rounded-xl border border-transparent">
+                        <div class="w-8 h-8 rounded-lg border border-gray-600 bg-gray-800/50 flex items-center justify-center font-black text-gray-400 text-xs">2</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-400 truncate">frontend_build_script.sh</div>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded text-indigo-400 bg-indigo-500/10">文件</span>
+                                <span class="text-[10px] text-gray-500 shrink-0">D:\Projects\super-clip\scripts</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="px-6 py-3 flex justify-between border-t border-white/5 bg-black/40 text-[10px] font-semibold text-gray-500">
+                    <div class="flex gap-4">
+                        <span><kbd class="border border-white/10 bg-white/5 rounded px-1">Tab</kbd> 切换分类</span>
+                        <span><kbd class="border border-white/10 bg-white/5 rounded px-1">Alt+1</kbd> 快选</span>
+                    </div>
+                    <div>2 条记录</div>
+                </div>
+            </div>
+            
+            <div class="absolute -right-20 top-1/2 -translate-y-1/2 hidden lg:flex flex-col gap-2">
+                <span class="bg-indigo-500/20 text-indigo-300 text-xs px-3 py-1 rounded-full border border-indigo-500/30 font-bold whitespace-nowrap shadow-[0_0_15px_rgba(99,102,241,0.2)]">全局唤醒 Cmd/Ctrl + M</span>
+                <svg class="w-8 h-8 text-indigo-500 transform -scale-x-100 rotate-45 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+            </div>
+        </div>
+    </header>
+
+    <!-- Section 1: Everthing Integration -->
+    <section id="minimalist" class="py-32 relative reveal z-10 border-t border-white/5 bg-black/20">
+        <div class="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+            <div>
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-blue-500/20 flex items-center justify-center mb-6 border border-indigo-500/30">
+                    <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <h2 class="text-4xl md:text-5xl font-black mb-6 leading-tight">C-ABI 直通底层，<br/><span class="text-indigo-400">毫秒级透视全盘。</span></h2>
+                <p class="text-xl text-gray-400 leading-relaxed font-medium mb-8">
+                    不仅仅是剪贴板工具。我们将 Voidtools Everything SDK 深度编译至 Rust 核心中。按下全局快捷键，不仅能秒切剪贴历史，更能瞬间搜出电脑深处的任何文件、图片、程序。方向键选中，回车直接原生打开。
+                </p>
+                <ul class="space-y-4 text-gray-300">
+                    <li class="flex items-center gap-3"><svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 零依赖，无需后台运行额外应用进程</li>
+                    <li class="flex items-center gap-3"><svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 极简居中视窗，复刻 Spotlight 体感</li>
+                    <li class="flex items-center gap-3"><svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> 支持后缀类型高级漏斗过滤</li>
+                </ul>
+            </div>
+            
+            <div class="relative">
+                <div class="absolute inset-0 bg-indigo-500/20 blur-[100px] rounded-full"></div>
+                <div class="glass-panel p-6 rounded-3xl relative border border-indigo-500/20 shadow-2xl">
+                    <div class="flex gap-2 mb-4 overflow-hidden">
+                        <span class="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase text-gray-500 bg-white/5 border border-white/10">全部</span>
+                        <span class="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase text-indigo-400 bg-indigo-500/20 border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]">📁 本地文件</span>
+                        <span class="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase text-gray-500 bg-white/5 border border-white/10">📄 剪贴板</span>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                            <div class="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold border border-emerald-500/30">Xls</div>
+                            <div>
+                                <div class="text-sm font-bold text-white">2026年Q1财务报表.xlsx</div>
+                                <div class="text-[10px] text-gray-500 mt-1">D:\Documents\Finance\</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                            <div class="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400 font-bold border border-orange-500/30">Exe</div>
+                            <div>
+                                <div class="text-sm font-bold text-white">Photoshop.exe</div>
+                                <div class="text-[10px] text-gray-500 mt-1">C:\Program Files\Adobe\</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 2: Local OCR -->
+    <section id="ocr" class="py-32 relative reveal z-10 border-t border-white/5">
+        <div class="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center flex-row-reverse">
+            <div class="order-1 lg:order-2">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center mb-6 border border-emerald-500/30">
+                    <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </div>
+                <h2 class="text-4xl md:text-5xl font-black mb-6 leading-tight">图片文字，<br/><span class="text-emerald-400">悬停即刻剥离。</span></h2>
+                <p class="text-xl text-gray-400 leading-relaxed font-medium mb-8">
+                    彻底告别繁琐的在线 OCR 识别工具。内部深嵌 ONNX Runtime 与先进的物理视觉模型，在本地硬件以 C++ 级速度极速解构截图。鼠标划取，文字透叠呈现。
+                </p>
+                <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-bold mb-6">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 离线纯血保护，100%零网络泄漏风险
+                </div>
+            </div>
+            
+            <div class="relative order-2 lg:order-1">
+                <div class="absolute inset-0 bg-emerald-500/10 blur-[100px] rounded-full"></div>
+                <div class="relative glass-panel rounded-2xl p-2 border border-emerald-500/20 overflow-hidden shadow-[0_20px_50px_rgba(52,211,153,0.15)] group">
+                    <!-- Mock Image -->
+                    <div class="w-full h-64 bg-gray-800 rounded-xl relative overflow-hidden flex flex-col pt-8 px-8 gap-4 font-mono text-gray-500 select-none">
+                        <div class="h-4 w-3/4 bg-gray-700/50 rounded"></div>
+                        <div class="h-4 w-full bg-gray-700/50 rounded"></div>
+                        <div class="h-4 w-5/6 bg-gray-700/50 rounded"></div>
+                        
+                        <!-- Overlay OCR Bounding Boxes -->
+                        <div class="absolute top-[30px] left-[30px] w-48 h-6 border-2 border-emerald-500 bg-emerald-500/20 rounded cursor-pointer transform group-hover:scale-[1.02] transition-transform">
+                            <div class="absolute -top-6 right-0 bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">Copy "fn process..."</div>
+                        </div>
+                        <div class="absolute top-[62px] left-[30px] w-64 h-6 border border-white/20 hover:border-emerald-500 hover:bg-emerald-500/20 rounded cursor-pointer transition-colors"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3: Smart Dashboard -->
+    <section id="dashboard" class="py-32 relative reveal z-10 border-t border-white/5 bg-black/20">
+        <div class="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+            <div>
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-500/20 to-rose-500/20 flex items-center justify-center mb-6 border border-pink-500/30">
+                    <svg class="w-6 h-6 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                </div>
+                <h2 class="text-4xl md:text-5xl font-black mb-6 leading-tight">上帝维度的<br/><span class="text-pink-400">数据全透明仪表盘。</span></h2>
+                <p class="text-xl text-gray-400 leading-relaxed font-medium mb-8">
+                    基于 Web 原生 Intl.Segmenter API 毫秒解构文本频率，拒绝底层黑盒逻辑。创新的“径向模块图谱”配合精确的“三小时内 / 今天早些时候”多维聚合，你的工作习惯，一目了然。
+                </p>
+            </div>
+            
+            <div class="relative">
+                <div class="absolute inset-0 bg-pink-500/10 blur-[100px] rounded-full"></div>
+                <div class="glass-panel w-72 rounded-3xl ml-auto border border-white/10 p-6 flex flex-col shadow-2xl relative">
+                    <div class="text-sm font-bold text-white mb-6">智能统计报表</div>
+                    
+                    <!-- SVG Radial Mockup -->
+                    <div class="w-32 h-32 mx-auto relative mb-8">
+                        <svg viewBox="0 0 100 100" class="transform -rotate-90">
+                            <!-- Background ring -->
+                            <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="12"></circle>
+                            <!-- Segments -->
+                            <path d="M 50 10 A 40 40 0 0 1 88.04 37.63" fill="none" stroke="#58A6FF" stroke-width="12" class="stroke-current opacity-90"></path>
+                            <path d="M 88.04 37.63 A 40 40 0 0 1 73.51 82.35" fill="none" stroke="#a78bfa" stroke-width="12" class="opacity-90"></path>
+                            <path d="M 73.51 82.35 A 40 40 0 0 1 26.48 82.35" fill="none" stroke="#34d399" stroke-width="12" class="opacity-90"></path>
+                            <path d="M 26.48 82.35 A 40 40 0 0 1 11.95 37.63" fill="none" stroke="#fb923c" stroke-width="12" class="opacity-90"></path>
+                            <path d="M 11.95 37.63 A 40 40 0 0 1 50 10" fill="none" stroke="#818cf8" stroke-width="12" class="opacity-90"></path>
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span class="text-xs text-gray-500 font-medium tracking-widest">TOTAL</span>
+                            <span class="text-xl font-black text-white">412</span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between text-xs font-bold text-gray-400 bg-white/5 py-2 px-3 rounded-lg"><span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#58A6FF]"></span>文本内容</span> <span>35%</span></div>
+                        <div class="flex items-center justify-between text-xs font-bold text-gray-400 bg-white/5 py-2 px-3 rounded-lg"><span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#34d399]"></span>超链接卡</span> <span>20%</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 4: Bento Details (Smart Discovery, Code Highlighting, Word Stats) -->
+    <section class="py-24 relative reveal z-10">
+        <div class="max-w-7xl mx-auto px-6">
+            <h2 class="text-3xl md:text-4xl font-black mb-16 text-center">细节之处，<span class="text-gradient">远超预期。</span></h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[280px]">
+                
+                <!-- Smart Discovery (Entity Extraction) -->
+                <div class="glass-panel p-8 rounded-[24px] flex flex-col justify-between group md:col-span-2 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent hover:from-indigo-500/10 transition-colors"></div>
+                    <div class="relative z-10 flex gap-6">
+                        <div class="flex-1">
+                            <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-4">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            </div>
+                            <h3 class="text-xl font-bold mb-2">智能内容发现</h3>
+                            <p class="text-gray-400 text-sm leading-relaxed max-w-sm">无需手动整理。超级剪贴板能在后台自动侦测记录中的提取出 **邮箱、网址、独立 IP 和 Todo 代办任务**，并生成直达动作栏。</p>
+                        </div>
+                        
+                        <!-- Mini UX Mockup for Smart Discovery -->
+                        <div class="w-64 bg-black/40 border border-white/5 rounded-xl p-4 hidden lg:block shrink-0 shadow-inner">
+                            <div class="text-[10px] font-bold text-gray-500 mb-3 tracking-widest">SMART DISCOVERY</div>
+                            <div class="space-y-2">
+                                <div class="bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs px-3 py-2 rounded-lg flex items-center justify-between">
+                                    <span>https://github.com/...</span> <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                </div>
+                                <div class="bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg flex items-center justify-between">
+                                    <span>192.168.1.104</span> <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+                                </div>
+                                <div class="bg-gray-800 border border-gray-700 text-gray-300 text-xs px-3 py-2 rounded-lg flex items-center gap-2">
+                                    <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> <span class="line-through opacity-50">修复支付模块的 Bug</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Syntax Highlighting -->
+                <div class="glass-panel p-8 rounded-[24px] flex flex-col relative overflow-hidden group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent hover:from-blue-500/10 transition-colors"></div>
+                    <div class="h-10 text-xl font-bold z-10 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                        </div>
+                        代码识别高亮
+                    </div>
+                    <p class="text-gray-400 text-sm mt-2 z-10">自动侦测代码块，提供 IDE 级别的多语言色彩高亮格式呈现。</p>
+                    <div class="mt-auto bg-black border border-white/10 rounded-xl p-3 font-mono text-xs z-10 shadow-lg">
+                        <span class="text-blue-400">const</span> <span class="text-[#f0f6fc]">render</span> = () =&gt; {<br/>
+                        &nbsp;&nbsp;<span class="text-purple-400">return</span> <span class="text-emerald-400">&lt;div&gt;</span>Super<span class="text-emerald-400">&lt;/div&gt;</span>;<br/>
+                        };
+                    </div>
+                </div>
+
+                <!-- Word Segmentation & Word Stats -->
+                <div class="glass-panel p-8 rounded-[24px] flex flex-col relative overflow-hidden group">
+                    <div class="absolute inset-0 bg-gradient-to-br from-pink-500/5 to-transparent hover:from-pink-500/10 transition-colors"></div>
+                    <div class="h-10 text-xl font-bold z-10 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 flex items-center justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
+                        </div>
+                        智能分词统计
+                    </div>
+                    <p class="text-gray-400 text-sm mt-2 z-10">Intl.Segmenter 驱动。深度分析你历史所有语料，并实时建立全库“高频词汇墙”。</p>
+                    <div class="mt-auto flex flex-wrap gap-2 z-10 relative">
+                        <!-- Simulated Word Cloud -->
+                        <span class="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-white font-black text-sm hover:scale-105 transition-transform cursor-pointer hover:bg-white/10">Rust</span>
+                        <span class="px-2 py-1 bg-white/5 border border-white/10 rounded-full text-gray-300 text-xs hover:border-pink-500 transition-colors">性能优化</span>
+                        <span class="px-2.5 py-1 bg-white/5 border border-white/10 rounded-full text-indigo-300 text-[11px] font-bold">Tauri</span>
+                        <span class="px-2 py-1 bg-white/5 border border-white/10 rounded-full text-gray-400 text-[10px]">接口联调</span>
+                        <span class="px-3 py-0.5 bg-white/5 border border-white/10 rounded-full text-emerald-300 text-xs font-bold ring-1 ring-emerald-500/30">Release</span>
+                    </div>
+                </div>
+
+                <!-- Dashboard Preview Picture (Fills remaining space) -->
+                <div class="glass-panel p-6 rounded-[24px] flex flex-col relative overflow-hidden group md:col-span-2">
+                    <div class="flex justify-between items-center mb-6 relative z-10">
+                        <div>
+                            <h3 class="text-xl font-bold mb-1">零黑箱，极致掌控。</h3>
+                            <p class="text-gray-400 text-sm">不仅仅是列表，一切动态都是可被追踪的、可被分析的。</p>
+                        </div>
+                        <div class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full text-white text-xs font-bold shadow-lg">数据不出本地</div>
+                    </div>
+                    
+                    <div class="absolute -bottom-10 -right-20 w-[120%] h-48 bg-[var(--bg-color)] border border-white/10 rounded-xl transform rotate-3 flex items-center justify-center p-4">
+                        <div class="w-full h-full bg-grid opacity-20 mask-image-bottom"></div>
+                        <!-- Mini visual -->
+                        <div class="absolute flex gap-4 rotate-[-3deg] z-10">
+                            <div class="w-32 h-16 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-3"><svg class="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path></svg><span class="text-sm font-bold opacity-50">Local Web</span></div>
+                            <div class="w-32 h-16 bg-blue-500/10 border border-blue-500/30 rounded-xl flex items-center justify-center gap-3"><span class="text-2xl">⚡</span><span class="text-sm font-bold text-blue-400">高速索引</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final Call to Action -->
+    <section class="py-32 relative text-center border-t border-white/5 z-10">
+        <div class="max-w-3xl mx-auto px-6">
+            <h2 class="text-4xl font-black mb-8">用原生级框架，取代沉重历史。</h2>
+            <a href="https://github.com/huangmang/super-clip/releases" class="inline-flex items-center gap-3 px-10 py-5 rounded-2xl bg-electric text-graphite font-black text-xl hover:bg-blue-400 hover:scale-105 transition-all shadow-[0_0_30px_rgba(88,166,255,0.4)]">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path></svg>
+                Get it on GitHub
+            </a>
+            <p class="mt-6 text-gray-500 font-medium">在 Windows 设备上无需繁琐配置，开箱即用。</p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-white/5 bg-black/80 py-10 relative z-10 backdrop-blur-xl">
+        <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <span class="text-gray-400 font-bold text-sm tracking-widest uppercase">Super Clip</span>
+            </div>
+            <p class="text-gray-600 text-sm font-medium">© 2026 Crafted with Rust and Passion for Ultimate Productivity.</p>
+        </div>
+    </footer>
+
+    <!-- Simple Scroll Trigger Script for reveal effect -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const reveals = document.querySelectorAll('.reveal');
+            const revealOnScroll = () => {
+                const windowHeight = window.innerHeight;
+                reveals.forEach(reveal => {
+                    const revealTop = reveal.getBoundingClientRect().top;
+                    if (revealTop < windowHeight - 100) {
+                        reveal.classList.add('active');
+                    }
+                });
+            };
+            window.addEventListener('scroll', revealOnScroll);
+            revealOnScroll(); // Trigger once on load
+        });
+    </script>
+</body>
+</html>
