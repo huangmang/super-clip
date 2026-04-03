@@ -64,19 +64,16 @@ fn update_clip_tags(app_handle: tauri::AppHandle, id: i64, tags: String) -> Resu
 fn perform_ocr(app_handle: tauri::AppHandle, id: i64, path: String) -> Result<ocr::OcrResult, String> {
     #[cfg(target_os = "windows")]
     {
-        // 1. Check if DB has result already
-        // Optimization: In a real app we should have get_by_id, but here we iterate the small list
-        if let Ok(clips) = database::get_all(&app_handle) {
-             if let Some(clip) = clips.iter().find(|c| c.id == id) {
-                if let Some(ocr_json) = &clip.ocr_lines {
-                     if !ocr_json.is_empty() {
-                         eprintln!("? OCR Cache Hit for ID: {}", id);
-                         let lines: Vec<ocr::OcrLine> = serde_json::from_str(ocr_json).unwrap_or_default();
-                         let text = clip.ocr_text.clone().unwrap_or_default();
-                         return Ok(ocr::OcrResult { text, lines });
-                     }
+        // 1. Check if DB has result already (fast single-row PK lookup)
+        if let Ok(Some(clip)) = database::get_clip_by_id(&app_handle, id) {
+            if let Some(ocr_json) = &clip.ocr_lines {
+                if !ocr_json.is_empty() {
+                    eprintln!("? OCR Cache Hit for ID: {}", id);
+                    let lines: Vec<ocr::OcrLine> = serde_json::from_str(ocr_json).unwrap_or_default();
+                    let text = clip.ocr_text.clone().unwrap_or_default();
+                    return Ok(ocr::OcrResult { text, lines });
                 }
-             }
+            }
         }
 
         eprintln!("? Performing OCR for: {}", path);
@@ -592,6 +589,14 @@ fn get_active_window_source() -> Option<String> {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::HiDpi::{SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2};
+        unsafe {
+            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+    }
+
     std::panic::set_hook(Box::new(|panic_info| {
         let payload = panic_info.payload();
         let message = if let Some(s) = payload.downcast_ref::<&str>() {
@@ -668,6 +673,14 @@ fn main() {
             open_path,
             update_clip_tags
         ])
+        .on_window_event(|event| match event.event() {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                // Prevent the window from actually closing - hide to tray instead
+                event.window().hide().unwrap();
+                api.prevent_close();
+            }
+            _ => {}
+        })
         .setup(|app| {
             // Init DB
             database::init(&app.handle()).unwrap();

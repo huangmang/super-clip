@@ -146,13 +146,13 @@ function App() {
             case 'code': return 'linear-gradient(135deg, #1e293b, #f59e0b)'; // Slate to Amber
             case 'file': return 'linear-gradient(135deg, #1e293b, #6366f1)'; // Slate to Indigo
             case 'favorite': return 'linear-gradient(135deg, #1e293b, #db2777)'; // Slate to Pink
-            default: return 'linear-gradient(135deg, #1e293b, #475569)'; // Slate to Gray
+            default: return 'linear-gradient(135deg, #1e293b, #3b82f6)'; // Slate to Blue (Default)
         }
     };
     const [lastSelectedId, setLastSelectedId] = useState<number | null>(null);
     const [expandedClips, setExpandedClips] = useState<number[]>([]); // Track expanded text clips
     const [segmentingClips, setSegmentingClips] = useState<number[]>([]); // Track clips in word-segmentation mode
-    const [timeFilter, setTimeFilter] = useState<string | null>(null); // null, '30m', '2h', '1d', '3d'
+    const [timeFilter, setTimeFilter] = useState<string | null>('1d'); // null, '30m', '2h', '1d', '3d'
     const [isMinimalist, setIsMinimalist] = useState(false);
     const [miniSearch, setMiniSearch] = useState("");
     const [miniSelectedIndex, setMiniSelectedIndex] = useState(0);
@@ -953,17 +953,20 @@ function App() {
     };
 
     return (
-        <div className={`h-screen ${theme} bg-[var(--bg-color)] text-[var(--text-main)] selection:bg-indigo-500/30 overflow-hidden transition-colors duration-300 flex flex-col`}>
+        <div className={`h-screen ${theme} bg-[var(--bg-color)] text-[var(--text-main)] selection:bg-indigo-500/30 overflow-hidden transition-colors duration-300 flex flex-col rounded-xl border border-white/10 shadow-2xl`}>
             {/* Custom Title Bar */}
             <div data-tauri-drag-region className="h-8 flex items-center justify-between bg-[var(--header-bg)] border-b border-[var(--border-color)] select-none shrink-0 transition-colors duration-500">
                 <div className="flex items-center gap-2 px-3 pointer-events-none">
                     <div 
-                        className="w-[22px] h-[22px] rounded-full flex items-center justify-center animate-clean-breath shadow-inner shadow-black/40 border border-white/10 ml-1 transition-all duration-500 overflow-hidden"
-                        style={{ '--logo-grad': getLogoGradient(activeTab) } as React.CSSProperties}
+                        className="w-6 h-6 rounded-full border-2 flex items-center justify-center animate-docs-breathe animate-color-cycle shadow-[0_0_8px_rgba(88,166,255,0.2)] ml-1"
+                        style={{ borderColor: 'var(--accent-color)' }}
                     >
-                        <div className="w-2.5 h-2.5 rounded-full bg-white/70 shadow-sm animate-inner-breath" />
+                        <div 
+                            className="w-2 h-2 rounded-full animate-docs-breathe-delayed"
+                            style={{ backgroundColor: 'var(--accent-color)' }}
+                        />
                     </div>
-                    <span className="text-[12px] font-bold tracking-widest text-[#d1d5db] uppercase font-mono ml-1.5">Super Clip</span>
+                    <span className="text-[14px] font-bold tracking-widest text-[#d1d5db] uppercase font-mono ml-1.5 pt-0.5">Super Clip</span>
                 </div>
                 
                 <div className="flex items-center h-full">
@@ -986,7 +989,7 @@ function App() {
                         <Square size={12} />
                     </button>
                     <button 
-                        onClick={() => appWindow.close()}
+                        onClick={() => invoke('hide_window')}
                         className="h-full px-3 text-gray-500 hover:bg-red-500/80 hover:text-white transition-all outline-none border-none cursor-pointer bg-transparent"
                     >
                         <X size={14} />
@@ -1395,11 +1398,11 @@ function App() {
                              onClick={(e) => e.stopPropagation()}>
                             
                             {/* Image Container with Visual OCR Overlay */}
-                            <div className="relative flex-shrink-0">
+                            <div className="relative flex-shrink-0 select-none" style={{ userSelect: "none" }}>
                                 <img
                                     ref={previewImgRef}
                                     src={previewImage ? convertFileSrc(previewImage) : ""}
-                                    className="max-w-full max-h-[70vh] rounded-lg shadow-2xl object-contain"
+                                    className="max-w-full max-h-[70vh] rounded-lg shadow-2xl object-contain pointer-events-none select-none"
                                 />
                                 <OCRLayer
                                     ocrData={ocrData || { lines: [], text: "" }}

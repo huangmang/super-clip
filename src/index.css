@@ -45,19 +45,38 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: var(--bg-color);
+  /* Body must be transparent for native rounded corners in framed OS windows */
+  background-color: transparent !important;
   color: var(--text-main);
-  transition: background-color 0.3s, color 0.3s;
+  transition: color 0.3s;
   overflow-x: hidden;
 }
 
 #root {
   width: 100%;
   height: 100vh;
+  background-color: transparent;
 }
 
 * {
   box-sizing: border-box;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+img {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  transform: translateZ(0);
+}
+
+.glass {
+  background: var(--panel-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-color);
+  transform: translateZ(0); /* Fix blurry bleeding */
+  backface-visibility: hidden;
 }
 
 /* Custom scrollbar */
@@ -81,6 +100,11 @@ body {
 ::selection {
   background-color: rgba(88, 166, 255, 0.3);
   color: white;
+}
+
+.ocr-no-select-flash ::selection, .ocr-no-select-flash *::selection {
+  background-color: transparent !important;
+  color: transparent !important;
 }
 
 [select-text] {
@@ -141,37 +165,31 @@ body::before {
   to { transform: rotate(360deg); }
 }
 
-/* Crisp Breathing Logo */
-@keyframes clean-breath {
+/* Minimalist Breathing Logo (from docs) with Color Cycling */
+@keyframes docs-breathe {
   0%, 100% {
-    transform: scale(0.95);
     opacity: 0.8;
-    filter: hue-rotate(0deg);
+    transform: scale(0.95);
   }
   50% {
+    opacity: 1;
     transform: scale(1.05);
-    opacity: 1;
-    filter: hue-rotate(45deg);
   }
 }
 
-.animate-clean-breath {
-  background: var(--logo-grad, linear-gradient(135deg, #1e293b, #475569));
-  animation: clean-breath 4s ease-in-out infinite alternate;
+@keyframes color-cycle {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
 }
 
-@keyframes inner-breath {
-  0%, 100% {
-    transform: scale(0.85);
-    opacity: 0.6;
-  }
-  50% {
-    transform: scale(1.1);
-    opacity: 1;
-  }
+.animate-color-cycle {
+  animation: color-cycle 12s linear infinite;
 }
 
-.animate-inner-breath {
-  animation: inner-breath 4s ease-in-out infinite alternate;
-  animation-delay: 0.5s;
+.animate-docs-breathe {
+  animation: docs-breathe 4s ease-in-out infinite;
+}
+
+.animate-docs-breathe-delayed {
+  animation: docs-breathe 4s ease-in-out infinite 0.5s;
 }

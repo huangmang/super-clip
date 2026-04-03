@@ -128,7 +128,7 @@ const FloatImage = () => {
 
     return (
     <div
-        className="relative w-screen h-screen group overflow-hidden"
+        className="relative w-screen h-screen group overflow-hidden select-none"
         onMouseEnter={() => setShowControls(true)}
         onMouseLeave={() => setShowControls(false)}
         onContextMenu={(e) => {

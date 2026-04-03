@@ -39,6 +39,14 @@ fn get_db_path(app_handle: &AppHandle) -> std::path::PathBuf {
 pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let db_path = get_db_path(app_handle);
     let conn = Connection::open(db_path)?;
+
+    // ── Performance Pragmas ──
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA cache_size = -8000;
+         PRAGMA temp_store = MEMORY;"
+    )?;
     
     conn.execute(
         "CREATE TABLE IF NOT EXISTS clips (
@@ -52,21 +60,20 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         [],
     )?;
 
-    // Attempt to add OCR columns if they don't exist
+    // Attempt to add columns if they don't exist
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN ocr_text TEXT", []);
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN ocr_lines TEXT", []);
-    
-    // Attempt to add is_pinned column if it doesn't exist (for existing DBs)
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN is_pinned BOOLEAN DEFAULT 0", []);
-
-    // Add embedding column
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN embedding BLOB", []);
-
-    // Add source_app column
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN source_app TEXT", []);
-
-    // Add tags column
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN tags TEXT", []);
+
+    // ── Critical Indexes for query performance ──
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_created_at ON clips(created_at)", []);
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_type ON clips(type)", []);
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_content ON clips(content)", []);
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_pinned_created ON clips(is_pinned DESC, created_at DESC)", []);
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_favorite ON clips(is_favorite)", []);
 
     // Add settings table
     conn.execute(
@@ -78,6 +85,29 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     Ok(())
+}
+
+/// Fast single-clip lookup by ID (avoids loading entire table for OCR cache checks)
+pub fn get_clip_by_id(app_handle: &AppHandle, id: i64) -> Result<Option<Clip>, Box<dyn std::error::Error>> {
+    let db_path = get_db_path(app_handle);
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare("SELECT id, content, type, is_favorite, is_pinned, created_at, ocr_text, ocr_lines, embedding, source_app, tags FROM clips WHERE id = ?1")?;
+    let clip = stmt.query_row(params![id], |row| {
+        Ok(Clip {
+            id: row.get(0)?,
+            content: row.get(1)?,
+            type_: row.get(2)?,
+            is_favorite: row.get(3)?,
+            is_pinned: row.get(4).unwrap_or(false),
+            created_at: row.get(5)?,
+            ocr_text: row.get(6).ok(),
+            ocr_lines: row.get(7).ok(),
+            embedding: row.get(8).ok(),
+            source_app: row.get(9).ok(),
+            tags: row.get(10).ok(),
+        })
+    }).ok();
+    Ok(clip)
 }
 
 pub fn get_setting(app_handle: &AppHandle, key: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
