@@ -137,62 +137,92 @@ fn copy_to_clipboard(_app_handle: tauri::AppHandle, content: String, kind: Strin
     println!("[RUST] copy_to_clipboard hit! kind: {}, len: {}", kind, content.len());
     let preview: String = content.chars().take(80).collect();
     eprintln!("[COPY] Backend copy_to_clipboard called. Kind: {}, Content preview: {}", kind, preview);
-    
-    let mut attempts = 0;
-    let max_attempts = 3;
-    let mut last_error = String::new();
 
-    while attempts < max_attempts {
-        attempts += 1;
-        
-        let res: Result<(), String> = if kind == "image" {
-            let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard initialization failed: {}", e))?;
-            let img = image::open(&content).map_err(|e| format!("Image open failed: {}", e))?.to_rgba8();
-            let (w, h) = img.dimensions();
-            let img_data = ImageData {
-                width: w as usize,
-                height: h as usize,
-                bytes: Cow::Owned(img.into_vec()),
+    // Spawning a fresh thread for clipboard operations is a common fix for Windows
+    // clipboard accessibility issues (1418 error) in multi-threaded environments like Tauri.
+    let handle = std::thread::spawn(move || {
+        let mut attempts = 0;
+        let max_attempts = 3;
+        let mut last_error = String::new();
+
+        while attempts < max_attempts {
+            attempts += 1;
+            
+            let res: Result<(), String> = if kind == "image" {
+                let img_res = (|| -> Result<(), String> {
+                    let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard initialization (arboard) failed: {}", e))?;
+                    let img = image::open(&content).map_err(|e| format!("Image open failed ({}): {}", content, e))?.to_rgba8();
+                    let (w, h) = img.dimensions();
+                    let img_data = ImageData {
+                        width: w as usize,
+                        height: h as usize,
+                        bytes: Cow::Owned(img.into_vec()),
+                    };
+                    clipboard.set_image(img_data).map_err(|e| format!("Set image pixels failed: {}", e))
+                })();
+
+                if img_res.is_err() {
+                    #[cfg(target_os = "windows")]
+                    {
+                        eprintln!("[COPY] Pixel copy failed: {}. Falling back to file copy for image.", img_res.as_ref().err().unwrap());
+                        use clipboard_win::{formats, Setter, Clipboard as WinClipboard};
+                        let fallback_res = (|| -> Result<(), String> {
+                            let _clip = WinClipboard::new_attempts(5).map_err(|_| "WinClipboard open failed".to_string())?;
+                            let _ = clipboard_win::empty(); // Clear before setting fallback
+                            let files = vec![content.clone()];
+                            formats::FileList.write_clipboard(&files).map_err(|e| format!("FileList (fallback) failed: {}", e))
+                        })();
+                        
+                        if fallback_res.is_ok() {
+                            return Ok(());
+                        }
+                    }
+                    img_res
+                } else {
+                    img_res
+                }
+            } else if kind == "file" {
+                #[cfg(target_os = "windows")]
+                {
+                    use clipboard_win::{formats, Setter, Clipboard as WinClipboard};
+                    (|| -> Result<(), String> {
+                        let _clip = WinClipboard::new_attempts(5).map_err(|_| "WinClipboard open failed".to_string())?;
+                        let _ = clipboard_win::empty();
+                        let files = vec![content.clone()];
+                        formats::FileList.write_clipboard(&files).map_err(|e| format!("FileList write failed: {}", e))
+                    })()
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard initialization failed: {}", e))?;
+                    clipboard.set_text(content.clone()).map_err(|e| e.to_string())
+                }
+            } else {
+                // Default: Text
+                #[cfg(target_os = "windows")]
+                {
+                    use clipboard_win::{set_clipboard, formats};
+                    set_clipboard(formats::Unicode, &content).map_err(|e| format!("Set text failed (win): {}", e))
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard initialization failed: {}", e))?;
+                    clipboard.set_text(content.clone()).map_err(|e| format!("Set text failed: {}", e))
+                }
             };
-            clipboard.set_image(img_data).map_err(|e| format!("Set image failed: {}", e))
-        } else if kind == "file" {
-            #[cfg(target_os = "windows")]
-            {
-                use clipboard_win::{formats, Setter, Clipboard as WinClipboard};
-                let _clip = WinClipboard::new_attempts(5).map_err(|_| "WinClipboard open failed".to_string())?;
-                let files = vec![content.clone()];
-                formats::FileList.write_clipboard(&files).map_err(|e| format!("FileList write failed: {}", e))
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard initialization failed: {}", e))?;
-                clipboard.set_text(content.clone()).map_err(|e| e.to_string())
-            }
-        } else {
-            // Default: Text
-            #[cfg(target_os = "windows")]
-            {
-                use clipboard_win::{set_clipboard, formats};
-                set_clipboard(formats::Unicode, &content).map_err(|e| format!("Set text failed (win): {}", e))
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard initialization failed: {}", e))?;
-                clipboard.set_text(content.clone()).map_err(|e| format!("Set text failed: {}", e))
-            }
-        };
 
-        if res.is_ok() {
-            eprintln!("[COPY] {} copied successfully (attempt {})", kind, attempts);
-            return Ok(());
-        } else {
-            last_error = res.err().unwrap_or_else(|| "Unknown error".to_string());
-            eprintln!("[COPY ERROR] Attempt {} failed: {}. Retrying in 100ms...", attempts, last_error);
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            if res.is_ok() {
+                return Ok(());
+            } else {
+                last_error = res.err().unwrap_or_else(|| "Unknown error".to_string());
+                eprintln!("[COPY ERROR] Attempt {} failed: {}. Retrying...", attempts, last_error);
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
         }
-    }
+        Err(format!("Copy failed after {} attempts. Last error: {}", max_attempts, last_error))
+    });
 
-    Err(format!("Copy failed after {} attempts: {}", max_attempts, last_error))
+    handle.join().map_err(|_| "Clipboard thread panicked".to_string())?
 }
 
 

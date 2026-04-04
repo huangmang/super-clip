@@ -138,17 +138,6 @@ function App() {
     const [isMultiSelect, setIsMultiSelect] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     
-    const getLogoGradient = (tab: string) => {
-        switch(tab) {
-            case 'text': return 'linear-gradient(135deg, #1e293b, #3b82f6)'; // Slate to Blue
-            case 'image': return 'linear-gradient(135deg, #1e293b, #8b5cf6)'; // Slate to Violet
-            case 'link': return 'linear-gradient(135deg, #1e293b, #10b981)'; // Slate to Emerald
-            case 'code': return 'linear-gradient(135deg, #1e293b, #f59e0b)'; // Slate to Amber
-            case 'file': return 'linear-gradient(135deg, #1e293b, #6366f1)'; // Slate to Indigo
-            case 'favorite': return 'linear-gradient(135deg, #1e293b, #db2777)'; // Slate to Pink
-            default: return 'linear-gradient(135deg, #1e293b, #3b82f6)'; // Slate to Blue (Default)
-        }
-    };
     const [lastSelectedId, setLastSelectedId] = useState<number | null>(null);
     const [expandedClips, setExpandedClips] = useState<number[]>([]); // Track expanded text clips
     const [segmentingClips, setSegmentingClips] = useState<number[]>([]); // Track clips in word-segmentation mode
