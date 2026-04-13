@@ -41,7 +41,7 @@ const RANGES = [
     { label: "一直", value: "all", key: "all" }
 ];
 
-const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTab, timeFilter }: DashboardProps) => {
+const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTab: _activeTab, timeFilter }: DashboardProps) => {
     const [selectedRange, setSelectedRange] = useState(RANGES[5]);
     const [stats, setStats] = useState<Record<string, number>>({});
     const [recentTexts, setRecentTexts] = useState<string[]>([]);
