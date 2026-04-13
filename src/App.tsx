@@ -134,6 +134,7 @@ function App() {
     const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
     const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
     const [copyFeedback, setCopyFeedback] = useState(false);
+    const [copyConfirmClip, setCopyConfirmClip] = useState<{clip: Clip, shouldPaste: boolean} | null>(null);
     const [isDashboard, setIsDashboard] = useState(true);
     const [isMultiSelect, setIsMultiSelect] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -307,8 +308,8 @@ function App() {
         };
     }, [isMinimalist]);
 
-    const handleCopy = useCallback(async (clip: Clip, shouldPaste: boolean = false) => {
-        console.log("[DEBUG] handleCopy called for item:", clip.id, "Type:", clip.type, "shouldPaste:", shouldPaste);
+    const executeCopy = useCallback(async (clip: Clip, shouldPaste: boolean = false) => {
+        console.log("[DEBUG] executeCopy called for item:", clip.id, "Type:", clip.type, "shouldPaste:", shouldPaste);
         try {
             await invoke("copy_to_clipboard", { content: clip.content, kind: clip.type });
             setCopyFeedback(true);
@@ -323,9 +324,18 @@ function App() {
                 }, 100);
             }
         } catch (error) {
-            console.error("[DEBUG] Failed to copy in handleCopy:", error);
+            console.error("[DEBUG] Failed to copy in executeCopy:", error);
         }
     }, [setCopyFeedback]);
+
+    const handleCopy = useCallback(async (clip: Clip, shouldPaste: boolean = false) => {
+        const alwaysCopy = localStorage.getItem("alwaysCopyToClipboard") === "true";
+        if (!alwaysCopy) {
+            setCopyConfirmClip({ clip, shouldPaste });
+            return;
+        }
+        await executeCopy(clip, shouldPaste);
+    }, [executeCopy]);
 
     const toggleSelect = (id: number, shiftKey: boolean = false) => {
         if (shiftKey && lastSelectedId !== null && isMultiSelect) {
@@ -1273,10 +1283,8 @@ function App() {
                         onFilter={(val, type) => {
                             if (type === "type") {
                                 setActiveTab(val);
-                                // Don't clear time filter, allow combination
                             } else if (type === "time") {
                                 setTimeFilter(val);
-                                // Don't reset activeTab, allow combination
                             } else if (type === "time_reset") {
                                 setTimeFilter(null);
                                 setActiveTab("all");
@@ -1286,6 +1294,8 @@ function App() {
                                 setTimeFilter(null);
                             }
                         }}
+                        activeTab={activeTab}
+                        timeFilter={timeFilter}
                     />
                 )}
             </div>
@@ -1494,6 +1504,52 @@ function App() {
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-all shadow-lg shadow-red-500/20"
                                 >
                                     确定清空
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Copy Confirmation Modal */}
+            {
+                copyConfirmClip && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-[var(--panel-bg)] w-full max-w-sm rounded-2xl border border-[var(--border-color)] shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
+                            <div className="flex items-center gap-3 text-indigo-500">
+                                <Copy size={24} />
+                                <h3 className="font-semibold text-[var(--text-main)]">放入系统剪贴板</h3>
+                            </div>
+                            <p className="text-sm text-[var(--text-dim)] leading-relaxed">
+                                是否将选中内容覆盖到系统剪贴板中？
+                            </p>
+                            <label className="flex items-center gap-2 mt-2 cursor-pointer text-sm text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors">
+                                <input 
+                                    type="checkbox" 
+                                    className="rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-500 focus:ring-indigo-500 cursor-pointer"
+                                    id="remember-copy"
+                                />
+                                记住选择，以后直接放入
+                            </label>
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={() => setCopyConfirmClip(null)}
+                                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] transition-all"
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const remember = (document.getElementById("remember-copy") as HTMLInputElement)?.checked;
+                                        if (remember) {
+                                            localStorage.setItem("alwaysCopyToClipboard", "true");
+                                        }
+                                        executeCopy(copyConfirmClip.clip, copyConfirmClip.shouldPaste);
+                                        setCopyConfirmClip(null);
+                                    }}
+                                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-lg shadow-indigo-500/20"
+                                >
+                                    确定提取
                                 </button>
                             </div>
                         </div>

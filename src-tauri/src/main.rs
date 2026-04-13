@@ -23,6 +23,9 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use tauri_plugin_autostart::MacosLauncher;
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+struct PendingClipState(Mutex<Option<(String, String, Option<String>)>>);
 
 /// Force-bring a Tauri window to the foreground.
 /// On Windows, Tauri's show()+set_focus() is sometimes blocked by the OS foreground lock,
@@ -618,6 +621,76 @@ fn get_active_window_source() -> Option<String> {
     }
 }
 
+#[tauri::command]
+fn user_prompt_decision(app_handle: tauri::AppHandle, decision: String, state: tauri::State<PendingClipState>) -> Result<(), String> {
+    if decision == "always" {
+        let _ = database::set_setting(&app_handle, "always_intercept_clip", "always");
+    }
+    
+    if decision == "always" || decision == "once" {
+        let mut data = state.0.lock().unwrap();
+        if let Some((content, kind, source)) = data.take() {
+            if let Ok(_) = database::insert_clip(&app_handle, content, kind, source) {
+                let _ = app_handle.emit_all("new-clip", ());
+            }
+        }
+    } else if decision == "ignore" {
+        let mut data = state.0.lock().unwrap();
+        *data = None;
+    }
+    
+    // Close all prompt windows
+    for (label, win) in app_handle.windows() {
+        if label.starts_with("prompt-window") {
+            let _ = win.close();
+        }
+    }
+    
+    Ok(())
+}
+
+fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String, source: Option<String>) {
+    let mode = database::get_setting(app_handle, "always_intercept_clip").ok().flatten().unwrap_or_else(|| "ask".to_string());
+    if mode == "always" {
+        if let Ok(_) = database::insert_clip(app_handle, content, kind, source) {
+            let _ = app_handle.emit_all("new-clip", ());
+        }
+    } else {
+        let state = app_handle.state::<PendingClipState>();
+        *state.0.lock().unwrap() = Some((content, kind, source));
+        
+        let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+        let label = format!("prompt-window-{}", id);
+
+        let window = tauri::WindowBuilder::new(
+            app_handle,
+            label,
+            tauri::WindowUrl::App("index.html?mode=prompt".into())
+        )
+        .title("Super Clip - Prompt")
+        .always_on_top(true)
+        .decorations(false)
+        .transparent(true)
+        .inner_size(280.0, 180.0)
+        .resizable(false)
+        .skip_taskbar(true)
+        .build()
+        .unwrap();
+
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+            use windows::Win32::Foundation::POINT;
+            let mut pt = POINT { x: 0, y: 0 };
+            unsafe { GetCursorPos(&mut pt); }
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: pt.x + 20, y: pt.y + 20 }));
+        }
+
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     {
@@ -701,7 +774,8 @@ fn main() {
             get_all_tags_with_counts,
             search_files,
             open_path,
-            update_clip_tags
+            update_clip_tags,
+            user_prompt_decision
         ])
         .on_window_event(|event| match event.event() {
             tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -712,6 +786,7 @@ fn main() {
             _ => {}
         })
         .setup(|app| {
+            app.manage(PendingClipState(Mutex::new(None)));
             // Init DB
             database::init(&app.handle()).unwrap();
 
@@ -780,11 +855,9 @@ fn main() {
                                             let path_str = img_path.to_string_lossy().to_string();
                                             let source = get_active_window_source();
                                             
-                                            if let Ok(_) = database::insert_clip(&app_handle, path_str, "image".to_string(), source) {
-                                                last_img_hash = hash;
-                                                let _ = app_handle.emit_all("new-clip", ());
-                                                eprintln!("? New image record added: {}", last_img_hash);
-                                            }
+                                            last_img_hash = hash;
+                                            handle_new_clip(&app_handle, path_str, "image".to_string(), source);
+                                            eprintln!("? Processed image intercept");
                                         }
                                     }
                                 }
@@ -808,11 +881,9 @@ fn main() {
                                     if first_file != &last_content {
                                         let source = get_active_window_source();
 
-                                        if let Ok(_) = database::insert_clip(&app_handle, first_file.clone(), "file".to_string(), source) {
-                                            last_content = first_file.clone();
-                                            let _ = app_handle.emit_all("new-clip", ());
-                                            eprintln!("? New file record added: {}", first_file);
-                                        }
+                                        last_content = first_file.clone();
+                                        handle_new_clip(&app_handle, first_file.clone(), "file".to_string(), source);
+                                        eprintln!("? Processed file intercept");
                                     }
                                 }
                             }
@@ -824,11 +895,9 @@ fn main() {
                                 let type_ = detect_type(&text);
                                 let source = get_active_window_source();
 
-                                if let Ok(_) = database::insert_clip(&app_handle, text.clone(), type_.clone(), source) {
-                                    last_content = text;
-                                    let _ = app_handle.emit_all("new-clip", ());
-                                    eprintln!("? New text record added (type: {})", type_);
-                                }
+                                last_content = text.clone();
+                                handle_new_clip(&app_handle, text.clone(), type_.clone(), source);
+                                eprintln!("? Processed text intercept");
                             }
                         } 
                     } else {

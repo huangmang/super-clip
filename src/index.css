@@ -58,40 +58,6 @@ body {
   background-color: transparent;
 }
 
-* {
-  box-sizing: border-box;
-  -webkit-font-smoothing: antialiased !important;
-  -moz-osx-font-smoothing: grayscale !important;
-}
-
-img {
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
-  transform: translateZ(0);
-}
-
-.glass {
-  background: var(--panel-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid var(--border-color);
-  transform: translateZ(0); /* Fix blurry bleeding */
-  backface-visibility: hidden;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
-}
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
@@ -152,14 +118,6 @@ body::before {
   pointer-events: none;
 }
 
-/* Glassmorphism Utility */
-.glass {
-  background: var(--panel-bg);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid var(--border-color);
-}
-
 @keyframes bgRotate {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -192,4 +150,10 @@ body::before {
 
 .animate-docs-breathe-delayed {
   animation: docs-breathe 4s ease-in-out infinite 0.5s;
+}
+
+/* Dashboard resize handle */
+::-webkit-resizer {
+  background: linear-gradient(135deg, transparent 60%, rgba(88, 166, 255, 0.3) 60%, rgba(88, 166, 255, 0.3) 70%, transparent 70%, transparent 80%, rgba(88, 166, 255, 0.2) 80%);
+  border-radius: 2px;
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { message as tauriMessage } from "@tauri-apps/api/dialog";
 import { X, Settings as SettingsIcon, Save, RotateCcw } from "lucide-react";
 import Tooltip from "./Tooltip";
 
@@ -13,6 +14,8 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
     const [miniShortcut, setMiniShortcut] = useState("CmdOrCtrl+M");
     const [retentionDays, setRetentionDays] = useState(0); // 0 = Always keep
     const [enableDoubleCtrl, setEnableDoubleCtrl] = useState(true);
+    const [autoLaunch, setAutoLaunch] = useState(false);
+    const [interceptMode, setInterceptMode] = useState<"always" | "ask">("ask");
     const [isRecording, setIsRecording] = useState<'main' | 'mini' | false>(false);
     const [tempKeys, setTempKeys] = useState<string[]>([]);
     const [tempMiniKeys, setTempMiniKeys] = useState<string[]>([]);
@@ -39,6 +42,14 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     if (val) setMiniShortcut(val);
                 })
                 .catch(console.error);
+
+            invoke<string | null>("get_setting", { key: "always_intercept_clip" })
+                .then(val => {
+                    if (val) setInterceptMode(val as "always" | "ask");
+                })
+                .catch(console.error);
+
+            invoke<boolean>("plugin:autostart|is_enabled").then(setAutoLaunch).catch(console.error);
         }
     }, [isOpen]);
 
@@ -85,18 +96,32 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
         setMessage(null);
         try {
             // Update Shortcut
-            await invoke("update_shortcut", { shortcutStr: finalShortcut });
+            await invoke("update_shortcut", { shortcutStr: finalShortcut, isMinimalist: false });
             // Update Retention
             await invoke("apply_retention_policy", { days: retentionDays });
             // Update Double Ctrl
             await invoke("toggle_double_ctrl", { enabled: enableDoubleCtrl });
-            // Save Mini Shortcut to DB
-            await invoke("save_setting", { key: "mini_shortcut", value: finalMiniShortcut });
+            // Update Mini Shortcut & Re-register
+            await invoke("update_shortcut", { shortcutStr: finalMiniShortcut, isMinimalist: true });
+            await invoke("save_setting", { key: "always_intercept_clip", value: interceptMode });
+
+            if (autoLaunch) {
+                await invoke("plugin:autostart|enable").catch(console.error);
+            } else {
+                await invoke("plugin:autostart|disable").catch(console.error);
+            }
 
             setShortcut(finalShortcut);
             setMiniShortcut(finalMiniShortcut);
             setMessage({ text: "设置已保存", type: 'success' });
-            setTimeout(() => onClose(), 1000);
+            
+            // Show Native Confirmation Window using Tauri API!
+            await tauriMessage("✅ 所有配置项已成功保存且立即生效！", {
+                title: "Super Clip 设置",
+                type: "info"
+            });
+            
+            onClose();
         } catch (error) {
             setMessage({ text: `保存失败: ${error}`, type: 'error' });
         } finally {
@@ -226,8 +251,49 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                         </p>
                     </div>
 
-                    {/* Double Ctrl Toggle (Windows Only) */}
+                    {/* Double Ctrl Toggle & Auto Launch */}
                     <div className="space-y-3 pt-2">
+                        <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)]">
+                            <div className="space-y-0.5">
+                                <label className="text-sm font-medium text-[var(--text-main)] block">
+                                    开机自动启动
+                                </label>
+                                <p className="text-[10px] text-[var(--text-dim)]">
+                                    跟随系统启动时自动运行并在后台驻留
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setAutoLaunch(!autoLaunch)}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${autoLaunch ? "bg-indigo-600" : "bg-[var(--border-color)]"
+                                    }`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoLaunch ? "translate-x-6" : "translate-x-1"
+                                        }`}
+                                />
+                            </button>
+                        </div>
+                        
+                        <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)]">
+                            <div className="space-y-0.5">
+                                <label className="text-sm font-medium text-[var(--text-main)] block">
+                                    新剪贴板内容提示
+                                </label>
+                                <p className="text-[10px] text-[var(--text-dim)]">
+                                    开启时每次在外部 `Ctrl+C` 都会弹窗询问是否收录
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setInterceptMode(interceptMode === "ask" ? "always" : "ask")}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${interceptMode === "ask" ? "bg-indigo-600" : "bg-[var(--border-color)]"
+                                    }`}
+                            >
+                                <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${interceptMode === "ask" ? "translate-x-6" : "translate-x-1"
+                                        }`}
+                                />
+                            </button>
+                        </div>
                         <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)]">
                             <div className="space-y-0.5">
                                 <label className="text-sm font-medium text-[var(--text-main)] block">
@@ -293,7 +359,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     </button>
                     <button
                         onClick={handleSave}
-                        disabled={saving || (tempKeys.length === 0 && tempMiniKeys.length === 0 && !message)}
+                        disabled={saving}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20"
                     >
                         {saving ? (

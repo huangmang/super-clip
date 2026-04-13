@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import FloatImage from "./components/FloatImage";
+import PromptModal from "./components/PromptModal";
 import "./index.css";
 
 const Root = () => {
@@ -10,6 +11,9 @@ const Root = () => {
 
     if (mode === "float") {
         return <FloatImage />;
+    }
+    if (mode === "prompt") {
+        return <PromptModal />;
     }
 
     return <App />;

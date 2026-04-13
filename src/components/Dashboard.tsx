@@ -28,6 +28,8 @@ interface DashboardProps {
     onOpenSettings: () => void;
     onClearHistory: () => void;
     onFilter: (value: string, type?: string) => void;
+    activeTab: string;
+    timeFilter: string | null;
 }
 
 const RANGES = [
@@ -39,11 +41,21 @@ const RANGES = [
     { label: "一直", value: "all", key: "all" }
 ];
 
-const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter }: DashboardProps) => {
-    const [selectedRange, setSelectedRange] = useState(RANGES[0]);
+const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTab, timeFilter }: DashboardProps) => {
+    const [selectedRange, setSelectedRange] = useState(RANGES[5]);
     const [stats, setStats] = useState<Record<string, number>>({});
     const [recentTexts, setRecentTexts] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Sync selectedRange when timeFilter changes from outside (e.g. left sidebar)
+    useEffect(() => {
+        if (timeFilter === null) {
+            setSelectedRange(RANGES[5]); // "一直"
+        } else {
+            const match = RANGES.find(r => r.key === timeFilter);
+            if (match) setSelectedRange(match);
+        }
+    }, [timeFilter]);
 
     const wordStats = useMemo(() => {
         const segmenter = new (Intl as any).Segmenter('zh', { granularity: 'word' });
@@ -157,7 +169,10 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter }: Dashbo
         }
     };
 
-    // --- Radial Chart Logic ---
+    // --- Radial Chart Logic (circle-based donut for seamless segments) ---
+    const CHART_R = 160;
+    const CHART_C = 2 * Math.PI * CHART_R; // circumference ≈ 1005.3
+
     const chartData = useMemo(() => {
         const entries = Object.entries(typeConfig)
             .filter(([key]) => key !== 'all')
@@ -173,31 +188,37 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter }: Dashbo
             .filter(d => d.value > 0);
         
         const total = entries.reduce((sum, d) => sum + d.value, 0);
-        let currentAngle = -90; // Start from top
+        let consumed = 0;
         
         return entries.map(d => {
             const percentage = total > 0 ? d.value / total : 0;
-            const angle = percentage * 360;
-            const startAngle = currentAngle;
-            currentAngle += angle;
-            
-            // Calc SVG paths for donut segments
-            const x1 = 50 + 40 * Math.cos((startAngle * Math.PI) / 180);
-            const y1 = 50 + 40 * Math.sin((startAngle * Math.PI) / 180);
-            const x2 = 50 + 40 * Math.cos((currentAngle * Math.PI) / 180);
-            const y2 = 50 + 40 * Math.sin((currentAngle * Math.PI) / 180);
-            const largeArcFlag = angle > 180 ? 1 : 0;
+            const segLen = percentage * CHART_C;
+            // dashoffset positions the visible segment; offset = C*0.25 starts at 12 o'clock
+            const offset = CHART_C * 0.25 - consumed;
+            consumed += segLen;
             
             return {
                 ...d,
-                path: `M ${x1} ${y1} A 40 40 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+                dashArray: `${segLen} ${CHART_C - segLen}`,
+                dashOffset: offset,
                 percentage: (percentage * 100).toFixed(0)
             };
         });
     }, [stats, currentRangeTotal]);
 
     return (
-        <div className="w-[300px] h-full overflow-y-auto p-6 space-y-8 custom-scrollbar glass animate-in slide-in-from-right duration-500 relative shadow-[-15px_0_40px_rgba(0,0,0,0.3)] z-40">
+        <div 
+            className="h-full overflow-y-auto p-6 space-y-8 custom-scrollbar animate-in slide-in-from-right duration-500 relative shadow-[-15px_0_40px_rgba(0,0,0,0.3)] z-40"
+            style={{
+                width: 'clamp(260px, 300px, 420px)',
+                resize: 'horizontal',
+                overflow: 'auto',
+                backgroundColor: 'var(--bg-color)',
+                borderLeft: '1px solid var(--border-color)',
+                willChange: 'transform',
+                transform: 'translateZ(0)',
+            }}
+        >
             {/* Close */}
             <Tooltip text="返回主界面" position="left">
                 <button
@@ -221,7 +242,10 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter }: Dashbo
                     {RANGES.map((range) => (
                         <button
                             key={range.key}
-                            onClick={() => setSelectedRange(range)}
+                            onClick={() => {
+                                setSelectedRange(range);
+                                onFilter(range.key, "time");
+                            }}
                             className={`flex-1 py-1.5 text-[10px] font-black rounded-lg transition-all ${
                                 selectedRange.key === range.key 
                                 ? "bg-blue-600 text-white shadow-lg scale-105" 
@@ -258,22 +282,25 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter }: Dashbo
                         {currentRangeTotal > 0 && chartData.length > 0 && (
                             <div className="flex items-center justify-between bg-black/20 p-6 rounded-3xl border border-white/5 shadow-inner">
                                 <div className="relative w-32 h-32 flex-shrink-0">
-                                    <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-0">
+                                    <svg viewBox="0 0 400 400" className="w-full h-full" shapeRendering="geometricPrecision">
                                         {/* Background Track */}
-                                        <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+                                        <circle cx="200" cy="200" r="160" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="32" />
                                         
-                                        {/* Segments */}
-                                        {chartData.map((d, i) => (
-                                            <path
+                                        {/* Segments - circle-based for seamless zero-gap rendering */}
+                                        {chartData.map((d) => (
+                                            <circle
                                                 key={d.key}
-                                                d={d.path}
+                                                cx="200"
+                                                cy="200"
+                                                r="160"
                                                 fill="none"
                                                 stroke={d.color}
-                                                strokeWidth="10"
-                                                strokeLinecap="round"
+                                                strokeWidth="40"
+                                                strokeDasharray={d.dashArray}
+                                                strokeDashoffset={d.dashOffset}
+                                                strokeLinecap="butt"
                                                 onClick={() => handleModuleFilter(d.key)}
-                                                className="transition-all duration-300 ease-out cursor-pointer hover:stroke-[14px] active:scale-95"
-                                                style={{ strokeDasharray: '0 252', animation: `dash 1s ease-out forwards ${i * 0.1}s` }}
+                                                className="transition-all duration-300 ease-out cursor-pointer hover:stroke-[48px]"
                                             />
                                         ))}
                                     </svg>
@@ -284,12 +311,6 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter }: Dashbo
                                         <span className="text-2xl font-black text-white leading-none group-hover/total:text-blue-400 transition-colors">{currentRangeTotal}</span>
                                         <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest mt-1 group-hover/total:text-blue-400/50 transition-colors">总计</span>
                                     </div>
-                                    
-                                    <style dangerouslySetInnerHTML={{ __html: `
-                                        @keyframes dash {
-                                            to { stroke-dasharray: 252 252; }
-                                        }
-                                    `}} />
                                 </div>
                                 
                                 <div className="flex flex-col gap-2.5 flex-1 pl-6">
