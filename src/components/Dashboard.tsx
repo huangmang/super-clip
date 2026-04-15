@@ -201,7 +201,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
             <div className="relative">
                 <div className="flex items-center gap-2 text-blue-400 font-bold mb-1">
                     <BarChart3 size={20} />
-                    <span className="text-[11px] uppercase tracking-widest font-bold">Analyzer</span>
+                    <span className="text-[12px] uppercase tracking-widest font-bold">Analyzer</span>
                 </div>
                 <h2 className="text-2xl font-bold text-[var(--text-main)] tracking-tight">分类筛选</h2>
                 
@@ -214,7 +214,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                 setSelectedRange(range);
                                 onFilter(range.key, "time");
                             }}
-                            className={`py-2 text-[10px] font-bold rounded-xl transition-all ${
+                            className={`py-2 text-[12px] font-bold rounded-xl transition-all ${
                                 selectedRange.key === range.key
                                 ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-[1.03]"
                                 : "bg-[var(--input-bg)] text-gray-500 hover:text-gray-300 border border-[var(--border-color)] hover:border-blue-500/30"
@@ -229,19 +229,19 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
             {loading ? (
                 <div className="flex flex-col items-center justify-center py-24 space-y-4">
                     <div className="w-8 h-8 border-3 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">计算中...</span>
+                    <span className="text-[12px] text-gray-500 uppercase font-bold tracking-widest">计算中...</span>
                 </div>
             ) : (
                 <>
                     {/* Module Selectors: High Impact Grid */}
                     <div className="space-y-4">
                         <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                            <h3 className="text-[11px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
+                            <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
                                 <Clock size={14} className="text-blue-400" />
                                 类别分布 ({selectedRange.label})
                             </h3>
                             <Tooltip text="重置所有筛选">
-                                <button onClick={() => onFilter("", "time_reset")} className="text-[10px] font-bold text-red-400/60 hover:text-red-400 transition-colors uppercase">重置</button>
+                                <button onClick={() => onFilter("", "time_reset")} className="text-[12px] font-bold text-red-400/60 hover:text-red-400 transition-colors uppercase">重置</button>
                             </Tooltip>
                         </div>
 
@@ -250,7 +250,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                         {currentRangeTotal > 0 && (
                             <div className="space-y-3">
                                 {/* Stacked horizontal bar */}
-                                <div className="relative h-5 rounded-full overflow-hidden bg-white/[0.04] flex">
+                                <div className="relative h-7 rounded-xl overflow-hidden bg-white/[0.04] flex">
                                     {Object.entries(typeConfig)
                                         .filter(([key]) => key !== 'all' && (stats[key] || 0) > 0)
                                         .sort((a, b) => (stats[b[0]] || 0) - (stats[a[0]] || 0))
@@ -265,7 +265,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                                 <div
                                                     key={key}
                                                     onClick={() => handleModuleFilter(key)}
-                                                    className="h-full cursor-pointer transition-all duration-500 hover:brightness-125 relative group/seg app-bar-fill"
+                                                    className="h-full cursor-pointer transition-all duration-500 hover:brightness-125 relative group/seg app-bar-fill flex items-center justify-center overflow-hidden"
                                                     style={{
                                                         '--bar-width': `${pct}%`,
                                                         '--bar-delay': `${i * 100}ms`,
@@ -273,19 +273,17 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                                         minWidth: pct > 0 ? '4px' : '0',
                                                     } as React.CSSProperties}
                                                 >
-                                                    {/* Tooltip on hover */}
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg bg-black/90 border border-white/10 text-[9px] text-white font-bold whitespace-nowrap opacity-0 group-hover/seg:opacity-100 transition-opacity pointer-events-none z-50">
+                                                    {/* Label inside bar on hover */}
+                                                    <span className="text-[10px] font-bold text-white/0 group-hover/seg:text-white drop-shadow-md transition-colors duration-200 whitespace-nowrap px-1 truncate">
+                                                        {config.label} {count}
+                                                    </span>
+                                                    {/* Tooltip above */}
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg bg-black/90 border border-white/10 text-[10px] text-white font-bold whitespace-nowrap opacity-0 group-hover/seg:opacity-100 transition-opacity pointer-events-none z-50">
                                                         {config.label} {count} ({Math.round(pct)}%)
                                                     </div>
                                                 </div>
                                             );
                                         })}
-                                </div>
-                                <div className="flex items-center justify-between px-1">
-                                    <span className="text-[9px] text-gray-500 font-mono">{t('dash.total')}: {currentRangeTotal}</span>
-                                    <span className="text-[9px] text-gray-600">
-                                        {Object.entries(typeConfig).filter(([k]) => k !== 'all' && (stats[k] || 0) > 0).length} {t('tab.all')}
-                                    </span>
                                 </div>
                             </div>
                         )}
@@ -320,20 +318,20 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                                 <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 relative z-10" style={{ background: `${color.glow}20` }}>
                                                     <Icon size={10} style={{ color: color.main }} />
                                                 </div>
-                                                <span className="text-[11px] font-medium truncate flex-1 text-left relative z-10" style={{ color: color.main }}>{config.label}</span>
-                                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded relative z-10" style={{ color: color.main, background: `${color.glow}15` }}>{count}</span>
-                                                <span className="text-[10px] font-mono relative z-10 w-7 text-right" style={{ color: `${color.main}80` }}>{pct}%</span>
+                                                <span className="text-[12px] font-medium truncate flex-1 text-left relative z-10" style={{ color: color.main }}>{config.label}</span>
+                                                <span className="text-[12px] font-mono font-bold px-1.5 py-0.5 rounded relative z-10" style={{ color: color.main, background: `${color.glow}15` }}>{count}</span>
+                                                <span className="text-[12px] font-mono relative z-10 w-7 text-right" style={{ color: `${color.main}80` }}>{pct}%</span>
                                             </button>
                                         );
                                     })}
-                                {/* Total row */}
+                                {/* Total row — prominent */}
                                 <button onClick={() => handleModuleFilter("all")}
-                                    className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all group hover:scale-[1.02] active:scale-[0.98]">
-                                    <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-white/10">
-                                        <LayoutDashboard size={10} className="text-gray-400" />
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20 hover:border-blue-500/40 transition-all group hover:scale-[1.02] active:scale-[0.98]">
+                                    <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-blue-500/20">
+                                        <LayoutDashboard size={10} className="text-blue-400" />
                                     </div>
-                                    <span className="text-[11px] font-medium text-gray-400 flex-1 text-left">{t('dash.total')}</span>
-                                    <span className="text-[11px] font-mono font-bold text-white/60 count-pop">{currentRangeTotal}</span>
+                                    <span className="text-[12px] font-bold text-gray-300 flex-1 text-left">{t('dash.total')}</span>
+                                    <span className="text-base font-bold text-white count-pop">{currentRangeTotal}</span>
                                 </button>
                             </div>
                         )}
@@ -357,23 +355,23 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                         return (
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                                    <h3 className="text-[11px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
+                                    <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
                                         <Monitor size={14} className="text-cyan-400" />
                                         {t('dash.source_apps')}
                                     </h3>
-                                    <span className="text-[10px] font-mono text-gray-500">{sourceApps.length} apps</span>
+                                    <span className="text-[12px] font-mono text-gray-500">{sourceApps.length} apps</span>
                                 </div>
 
                                 {/* Stacked bar overview */}
                                 <div className="space-y-3">
-                                    <div className="relative h-5 rounded-full overflow-hidden bg-white/[0.04] flex">
+                                    <div className="relative h-7 rounded-xl overflow-hidden bg-white/[0.04] flex">
                                         {sourceApps.slice(0, 8).map(([app, count], i) => {
                                             const pct = (count / appTotal) * 100;
                                             const c = COLORS[i % COLORS.length];
                                             return (
                                                 <div key={app}
                                                     onClick={() => onFilter(app, "source_app")}
-                                                    className="h-full cursor-pointer transition-all duration-500 hover:brightness-125 relative group/seg app-bar-fill"
+                                                    className="h-full cursor-pointer transition-all duration-500 hover:brightness-125 relative group/seg app-bar-fill flex items-center justify-center overflow-hidden"
                                                     style={{
                                                         '--bar-width': `${pct}%`,
                                                         '--bar-delay': `${i * 100}ms`,
@@ -381,16 +379,15 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                                         minWidth: pct > 0 ? '4px' : '0',
                                                     } as React.CSSProperties}
                                                 >
-                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg bg-black/90 border border-white/10 text-[9px] text-white font-bold whitespace-nowrap opacity-0 group-hover/seg:opacity-100 transition-opacity pointer-events-none z-50">
+                                                    <span className="text-[10px] font-bold text-white/0 group-hover/seg:text-white drop-shadow-md transition-colors duration-200 whitespace-nowrap px-1 truncate">
+                                                        {app}
+                                                    </span>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-lg bg-black/90 border border-white/10 text-[10px] text-white font-bold whitespace-nowrap opacity-0 group-hover/seg:opacity-100 transition-opacity pointer-events-none z-50">
                                                         {app} {count} ({Math.round(pct)}%)
                                                     </div>
                                                 </div>
                                             );
                                         })}
-                                    </div>
-                                    <div className="flex items-center justify-between px-1">
-                                        <span className="text-[9px] text-gray-500 font-mono">{t('dash.total')}: {appTotal}</span>
-                                        <span className="text-[9px] text-gray-600">{sourceApps.length} apps</span>
                                     </div>
                                 </div>
 
@@ -413,19 +410,19 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                                 <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 relative z-10" style={{ background: `${c.glow}20` }}>
                                                     <Globe size={10} style={{ color: c.main }} />
                                                 </div>
-                                                <span className="text-[11px] font-medium truncate flex-1 text-left relative z-10" style={{ color: c.main }}>{app}</span>
-                                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded relative z-10" style={{ color: c.main, background: `${c.glow}15` }}>{count}</span>
-                                                <span className="text-[10px] font-mono relative z-10 w-7 text-right" style={{ color: `${c.main}80` }}>{pct}%</span>
+                                                <span className="text-[12px] font-medium truncate flex-1 text-left relative z-10" style={{ color: c.main }}>{app}</span>
+                                                <span className="text-[12px] font-mono font-bold px-1.5 py-0.5 rounded relative z-10" style={{ color: c.main, background: `${c.glow}15` }}>{count}</span>
+                                                <span className="text-[12px] font-mono relative z-10 w-7 text-right" style={{ color: `${c.main}80` }}>{pct}%</span>
                                             </button>
                                         );
                                     })}
-                                    {/* Total */}
-                                    <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                                        <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-white/10">
-                                            <Monitor size={10} className="text-gray-400" />
+                                    {/* Total — prominent */}
+                                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
+                                        <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-cyan-500/20">
+                                            <Monitor size={10} className="text-cyan-400" />
                                         </div>
-                                        <span className="text-[11px] font-medium text-gray-400 flex-1 text-left">{t('dash.total')}</span>
-                                        <span className="text-[11px] font-mono font-bold text-white/60 count-pop">{appTotal}</span>
+                                        <span className="text-[12px] font-bold text-gray-300 flex-1 text-left">{t('dash.total')}</span>
+                                        <span className="text-base font-bold text-white count-pop">{appTotal}</span>
                                     </div>
                                 </div>
                             </div>
@@ -450,7 +447,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                             <div className="space-y-4">
                                 <div className="flex items-center gap-2 border-b border-white/5 pb-2 text-blue-400">
                                     <Hash size={16} />
-                                    <h3 className="text-[11px] font-bold text-[var(--text-main)] uppercase tracking-wider">{t('dash.word_freq')}</h3>
+                                    <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider">{t('dash.word_freq')}</h3>
                                 </div>
                                 <div className="flex flex-wrap items-center justify-center gap-2 py-2 min-h-[80px]">
                                     {sorted.map(([word, count], i) => {
@@ -494,11 +491,11 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
 
                     {/* Quick Search Tip */}
                     <div className="p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 space-y-2">
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-indigo-400 uppercase tracking-widest">
+                        <div className="flex items-center gap-2 text-[12px] font-bold text-indigo-400 uppercase tracking-widest">
                             <Search size={12} />
                             筛选说明
                         </div>
-                        <p className="text-[11px] text-gray-400 leading-relaxed">
+                        <p className="text-[12px] text-gray-400 leading-relaxed">
                             点击上方模块将同时应用 <span className="text-white font-bold">{selectedRange.label}</span> 与 <span className="text-white font-bold">分类类型</span> 过滤，主列表将即时更新。
                         </p>
                     </div>
@@ -508,11 +505,11 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                         <div className="space-y-3 pt-2">
                             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
                                 <Sparkles size={14} className="text-yellow-400" />
-                                <h3 className="text-[11px] font-bold text-[var(--text-main)] uppercase tracking-wider">智能发现</h3>
+                                <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider">智能发现</h3>
                             </div>
                             <div className="space-y-2">
                                 {discoveries.tasks.concat(discoveries.links, discoveries.assets).slice(0, 3).map((item, i) => (
-                                    <div key={`disc-${i}`} onClick={() => handleAction(item)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--panel-bg)] border border-[var(--border-color)] hover:border-indigo-500/30 transition-all cursor-pointer truncate text-[11px] text-[var(--text-dim)] hover:text-[var(--text-main)]">
+                                    <div key={`disc-${i}`} onClick={() => handleAction(item)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--panel-bg)] border border-[var(--border-color)] hover:border-indigo-500/30 transition-all cursor-pointer truncate text-[12px] text-[var(--text-dim)] hover:text-[var(--text-main)]">
                                         <item.icon size={12} className="flex-shrink-0" />
                                         <span className="truncate">{item.value}</span>
                                     </div>
@@ -530,14 +527,14 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                     className="flex items-center justify-center gap-2 p-4 rounded-xl bg-[var(--input-bg)] border border-[var(--border-color)] text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] transition-all group"
                 >
                     <Settings size={16} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">设置</span>
+                    <span className="text-[12px] font-bold uppercase tracking-widest">设置</span>
                 </button>
                 <button
                     onClick={onClearHistory}
                     className="flex items-center justify-center gap-2 p-4 rounded-xl bg-[var(--input-bg)] border border-[var(--border-color)] text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/5 transition-all group"
                 >
                     <Eraser size={16} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">清空</span>
+                    <span className="text-[12px] font-bold uppercase tracking-widest">清空</span>
                 </button>
             </div>
         </div>
