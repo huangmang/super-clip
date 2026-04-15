@@ -3,14 +3,16 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Heiti SC", "SimSun", sans-serif;
+  font-family: Inter, -apple-system, "Segoe UI", system-ui, "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 
   /* Premium Hit-App Palette (Graphite & Electric Blue) */
   --bg-color: #0d1117; /* Deep Charcoal Blue-Grey */
@@ -41,15 +43,23 @@
   --tray-bg: rgba(255, 255, 255, 0.8);
 }
 
+* {
+  /* Force crisp rendering on high-DPI displays */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  /* Body must be transparent for native rounded corners in framed OS windows */
   background-color: transparent !important;
   color: var(--text-main);
   transition: color 0.3s;
   overflow-x: hidden;
+  /* Crisp text on Windows high-DPI */
+  -webkit-font-smoothing: antialiased;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 #root {
@@ -156,4 +166,177 @@ body::before {
 ::-webkit-resizer {
   background: linear-gradient(135deg, transparent 60%, rgba(88, 166, 255, 0.3) 60%, rgba(88, 166, 255, 0.3) 70%, transparent 70%, transparent 80%, rgba(88, 166, 255, 0.2) 80%);
   border-radius: 2px;
+}
+
+/* ═══ Premium Animation System ═══ */
+
+/* Staggered fade-up for dashboard items */
+.dash-stagger > * {
+  opacity: 0;
+  animation: dashFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.dash-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.dash-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.dash-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.dash-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.dash-stagger > *:nth-child(5) { animation-delay: 240ms; }
+.dash-stagger > *:nth-child(6) { animation-delay: 300ms; }
+.dash-stagger > *:nth-child(7) { animation-delay: 360ms; }
+.dash-stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+@keyframes dashFadeUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Shimmer gradient effect for premium cards */
+.shimmer-bg {
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.04) 37%,
+    transparent 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmerSlide 3s ease-in-out infinite;
+}
+
+@keyframes shimmerSlide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Card with hover lift — no backdrop-filter to keep text crisp */
+.glass-card {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s ease;
+}
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(99, 102, 241, 0.15);
+}
+
+/* Donut ring draw animation */
+.ring-segment {
+  stroke-dashoffset: var(--ring-circumference, 1005);
+  animation: ringDraw 1s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  animation-delay: var(--ring-delay, 0ms);
+}
+
+@keyframes ringDraw {
+  to { stroke-dashoffset: var(--ring-target, 0); }
+}
+
+/* Source app bar fill with stagger */
+.app-bar-fill {
+  width: 0%;
+  animation: barGrow 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: var(--bar-delay, 0ms);
+}
+
+@keyframes barGrow {
+  to { width: var(--bar-width, 100%); }
+}
+
+/* Number count-up pop effect */
+.count-pop {
+  animation: countPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes countPop {
+  0% { transform: scale(0.6); opacity: 0; }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Hover glow ring for interactive elements */
+.hover-glow {
+  position: relative;
+}
+.hover-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(6, 182, 212, 0.3));
+  z-index: -1;
+  filter: blur(8px);
+}
+.hover-glow:hover::after {
+  opacity: 1;
+}
+
+/* Subtle float for dashboard header icon */
+.icon-float {
+  animation: iconFloat 4s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(-2deg); }
+  75% { transform: translateY(1px) rotate(1deg); }
+}
+
+/* Smooth scrollbar fade */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(110, 118, 129, 0.2);
+  border-radius: 99px;
+  transition: background 0.3s;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(110, 118, 129, 0.5);
+}
+
+/* Tag cloud hover pulse */
+.tag-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tag-hover:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+}
+.tag-hover:active {
+  transform: scale(0.95);
+}
+
+/* Bubble float animation — each bubble has slight random movement */
+.bubble-float {
+  animation: bubbleFloat 4s ease-in-out infinite;
+}
+.bubble-float:nth-child(odd) { animation-direction: alternate-reverse; }
+.bubble-float:nth-child(3n) { animation-duration: 5s; }
+.bubble-float:nth-child(4n) { animation-duration: 3.5s; }
+
+@keyframes bubbleFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Toast checkmark draw */
+@keyframes dash {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Toast scale-in */
+.animate-scale-in {
+  animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), toastOut 0.3s ease-in 1.2s forwards;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+/* Undo bar countdown */
+@keyframes shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
 }

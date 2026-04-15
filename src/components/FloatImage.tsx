@@ -3,6 +3,8 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/tauri";
 import { X, Search, Maximize, Minimize, Copy } from "lucide-react";
 import { appWindow, LogicalSize } from "@tauri-apps/api/window";
 import OCRLayer, { OcrResult } from "./OCRLayer";
+import { t, initLocale } from "../i18n";
+initLocale();
 
 const FloatImage = () => {
     const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -171,7 +173,7 @@ const FloatImage = () => {
                 <button
                     onClick={() => setIsStretched(!isStretched)}
                     className={`p-1.5 rounded-lg backdrop-blur-md transition-all border border-white/10 text-white ${isStretched ? 'bg-indigo-500' : 'bg-black/50 hover:bg-indigo-500'}`}
-                    title={isStretched ? "Restrain to Aspect Ratio" : "Stretch to Fill"}
+                    title={isStretched ? t('float.aspect_ratio') : t('float.stretch')}
                 >
                     {isStretched ? <Minimize size={16} /> : <Maximize size={16} />}
                 </button>
@@ -182,14 +184,14 @@ const FloatImage = () => {
                         ? 'bg-indigo-500/80 animate-pulse'
                         : 'bg-black/50 hover:bg-indigo-500'
                         }`}
-                    title="Recognize Text (OCR)"
+                    title={t('float.ocr')}
                 >
                     <Search size={16} className={isOcrLoading ? "animate-spin" : ""} />
                 </button>
                 <button
                     onClick={() => appWindow.close()}
                     className="p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-lg backdrop-blur-md transition-all border border-white/10"
-                    title="Close"
+                    title={t('float.close')}
                 >
                     <X size={16} />
                 </button>
@@ -202,7 +204,7 @@ const FloatImage = () => {
                     <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
                     </div>
-                    <span className="text-sm font-bold tracking-wide">复制成功 / Copied!</span>
+                    <span className="text-sm font-bold tracking-wide">{t('float.copied')}</span>
                 </div>
             </div>
         )}
@@ -226,7 +228,7 @@ const FloatImage = () => {
                         setContextMenu(null);
                     }}
                 >
-                    <Copy size={16} /> 复制文本 (Copy)
+                    <Copy size={16} /> {t('float.copy_text')}
                 </button>
             </div>
         )}

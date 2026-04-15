@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { message as tauriMessage } from "@tauri-apps/api/dialog";
-import { X, Settings as SettingsIcon, Save, RotateCcw } from "lucide-react";
+import { X, Settings as SettingsIcon, Save, RotateCcw, Globe } from "lucide-react";
 import Tooltip from "./Tooltip";
+import { t, getLocale, setLocale, type Locale } from "../i18n";
 
 interface SettingsProps {
     isOpen: boolean;
@@ -21,6 +22,18 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
     const [tempMiniKeys, setTempMiniKeys] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+    const [ignoredApps, setIgnoredApps] = useState<string[]>([]);
+    const [newIgnoredApp, setNewIgnoredApp] = useState("");
+    const [locale, setLocaleState] = useState<Locale>(getLocale());
+
+    // Snippets
+    interface Snippet { id: number; name: string; content: string; trigger_text?: string | null; created_at: string; }
+    const [snippets, setSnippets] = useState<Snippet[]>([]);
+    const [snippetName, setSnippetName] = useState("");
+    const [snippetContent, setSnippetContent] = useState("");
+    const [snippetTrigger, setSnippetTrigger] = useState("");
+    const [editingSnippetId, setEditingSnippetId] = useState<number | null>(null);
+    const [settingsTab, setSettingsTab] = useState<"general" | "snippets">("general");
 
     useEffect(() => {
         if (isOpen) {
@@ -50,6 +63,16 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                 .catch(console.error);
 
             invoke<boolean>("plugin:autostart|is_enabled").then(setAutoLaunch).catch(console.error);
+
+            invoke<Snippet[]>("get_snippets").then(setSnippets).catch(console.error);
+
+            invoke<string | null>("get_setting", { key: "ignored_apps" })
+                .then(val => {
+                    if (val) {
+                        try { setIgnoredApps(JSON.parse(val)); } catch { setIgnoredApps([]); }
+                    }
+                })
+                .catch(console.error);
         }
     }, [isOpen]);
 
@@ -159,8 +182,98 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     </Tooltip>
                 </div>
 
+                {/* Tab Switcher + Language Toggle */}
+                <div className="flex border-b border-[var(--border-color)]">
+                    <button onClick={() => setSettingsTab("general")} className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${settingsTab === "general" ? "text-indigo-400 border-b-2 border-indigo-400" : "text-[var(--text-dim)] hover:text-[var(--text-main)]"}`}>{t('settings.tab_general')}</button>
+                    <button onClick={() => setSettingsTab("snippets")} className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${settingsTab === "snippets" ? "text-indigo-400 border-b-2 border-indigo-400" : "text-[var(--text-dim)] hover:text-[var(--text-main)]"}`}>{t('settings.tab_snippets')}</button>
+                    <button
+                        onClick={() => {
+                            const next = locale === 'zh' ? 'en' : 'zh';
+                            setLocale(next);
+                            setLocaleState(next);
+                            invoke("save_setting", { key: "locale", value: next }).catch(console.error);
+                        }}
+                        className="px-3 py-2 text-[10px] font-bold text-[var(--text-dim)] hover:text-indigo-400 transition-colors flex items-center gap-1.5 shrink-0"
+                    >
+                        <Globe size={12} />
+                        {locale === 'zh' ? 'EN' : '中'}
+                    </button>
+                </div>
+
                 {/* Content */}
                 <div className="p-6 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+
+                {settingsTab === "snippets" ? (
+                    <div className="space-y-4">
+                        <div className="space-y-3">
+                            <input
+                                type="text"
+                                placeholder="Snippet name"
+                                value={snippetName}
+                                onChange={(e) => setSnippetName(e.target.value)}
+                                className="w-full bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500/50"
+                            />
+                            <textarea
+                                placeholder="Snippet content..."
+                                value={snippetContent}
+                                onChange={(e) => setSnippetContent(e.target.value)}
+                                rows={4}
+                                className="w-full bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500/50 font-mono resize-none"
+                            />
+                            <input
+                                type="text"
+                                placeholder="Trigger prefix (optional, e.g. ;;email)"
+                                value={snippetTrigger}
+                                onChange={(e) => setSnippetTrigger(e.target.value)}
+                                className="w-full bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500/50"
+                            />
+                            <button
+                                onClick={async () => {
+                                    if (!snippetName.trim() || !snippetContent.trim()) return;
+                                    if (editingSnippetId) {
+                                        await invoke("update_snippet", { id: editingSnippetId, name: snippetName, content: snippetContent, triggerText: snippetTrigger || null });
+                                    } else {
+                                        await invoke("create_snippet", { name: snippetName, content: snippetContent, triggerText: snippetTrigger || null });
+                                    }
+                                    setSnippetName(""); setSnippetContent(""); setSnippetTrigger(""); setEditingSnippetId(null);
+                                    invoke<Snippet[]>("get_snippets").then(setSnippets);
+                                }}
+                                className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all"
+                            >
+                                {editingSnippetId ? "Update Snippet" : "Add Snippet"}
+                            </button>
+                        </div>
+
+                        {snippets.length > 0 && (
+                            <div className="space-y-2 border-t border-[var(--border-color)] pt-4">
+                                {snippets.map((s) => (
+                                    <div key={s.id} className="flex items-start gap-3 p-3 bg-[var(--input-bg)] rounded-lg border border-[var(--border-color)] group">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-bold text-[var(--text-main)]">{s.name}</span>
+                                                {s.trigger_text && (
+                                                    <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-400 rounded text-[10px] font-mono">{s.trigger_text}</span>
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] text-[var(--text-dim)] mt-1 truncate font-mono">{s.content}</p>
+                                        </div>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={() => { setEditingSnippetId(s.id); setSnippetName(s.name); setSnippetContent(s.content); setSnippetTrigger(s.trigger_text || ""); }}
+                                                className="p-1.5 text-[var(--text-dim)] hover:text-indigo-400 transition-colors"
+                                            >Edit</button>
+                                            <button
+                                                onClick={async () => { await invoke("delete_snippet", { id: s.id }); invoke<Snippet[]>("get_snippets").then(setSnippets); }}
+                                                className="p-1.5 text-[var(--text-dim)] hover:text-red-400 transition-colors"
+                                            >Del</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                <>
                     {/* Hotkey Section */}
                     <div className="space-y-3">
                         <label className="text-xs font-medium text-[var(--text-dim)] uppercase tracking-wider block">
@@ -339,6 +452,85 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                             注意: 置顶 📌 和 收藏 ⭐ 的内容永远不会被自动清理。
                         </p>
                     </div>
+
+                    {/* Privacy: Ignored Apps */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
+                            Privacy — Ignored Apps
+                        </label>
+                        <p className="text-[10px] text-gray-600">
+                            Clipboard content from these apps will never be recorded.
+                        </p>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                placeholder="e.g. KeePass.exe"
+                                value={newIgnoredApp}
+                                onChange={(e) => setNewIgnoredApp(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && newIgnoredApp.trim()) {
+                                        const updated = [...ignoredApps, newIgnoredApp.trim()];
+                                        setIgnoredApps(updated);
+                                        invoke("save_setting", { key: "ignored_apps", value: JSON.stringify(updated) });
+                                        setNewIgnoredApp("");
+                                    }
+                                }}
+                                className="flex-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500/50"
+                            />
+                            <button
+                                onClick={() => {
+                                    if (newIgnoredApp.trim()) {
+                                        const updated = [...ignoredApps, newIgnoredApp.trim()];
+                                        setIgnoredApps(updated);
+                                        invoke("save_setting", { key: "ignored_apps", value: JSON.stringify(updated) });
+                                        setNewIgnoredApp("");
+                                    }
+                                }}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold"
+                            >
+                                Add
+                            </button>
+                        </div>
+                        {/* Quick-add suggestions */}
+                        <div className="flex gap-1.5 flex-wrap">
+                            {["KeePass.exe", "1Password.exe", "Bitwarden.exe", "LastPass.exe"].filter(a => !ignoredApps.includes(a)).map(app => (
+                                <button
+                                    key={app}
+                                    onClick={() => {
+                                        const updated = [...ignoredApps, app];
+                                        setIgnoredApps(updated);
+                                        invoke("save_setting", { key: "ignored_apps", value: JSON.stringify(updated) });
+                                    }}
+                                    className="px-2 py-0.5 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[10px] text-[var(--text-dim)] hover:border-indigo-500/50 hover:text-indigo-400 transition-colors"
+                                >
+                                    + {app}
+                                </button>
+                            ))}
+                        </div>
+                        {/* Current list */}
+                        {ignoredApps.length > 0 && (
+                            <div className="flex gap-1.5 flex-wrap mt-1">
+                                {ignoredApps.map((app, i) => (
+                                    <span key={i} className="flex items-center gap-1 px-2 py-1 bg-red-500/10 border border-red-500/20 rounded-lg text-[10px] text-red-400 font-medium">
+                                        {app}
+                                        <button
+                                            onClick={() => {
+                                                const updated = ignoredApps.filter((_, idx) => idx !== i);
+                                                setIgnoredApps(updated);
+                                                invoke("save_setting", { key: "ignored_apps", value: JSON.stringify(updated) });
+                                            }}
+                                            className="hover:text-red-300 ml-0.5"
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                </>
+                )}
 
                     {message && (
                         <div className={`p-3 rounded-lg text-xs flex items-center gap-2 animate-in slide-in-from-top-1 duration-200 ${message.type === 'success' ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"

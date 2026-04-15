@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use ort::{inputs, value::Value, session::Session};
-use ndarray::{Array4, Ix4, s, Array3, Axis, ArrayView4, ArrayView3};
+use ndarray;
 use image::{DynamicImage, GenericImageView, imageops::FilterType};
 
 #[cfg(target_os = "windows")]
@@ -143,9 +143,18 @@ pub fn recognize_text(image_path: &str) -> Result<OcrResult, String> {
     })
 }
 
+// ── Global cached OCR engine (avoids reloading ONNX models per call) ──
+
+use std::sync::{OnceLock, Mutex as StdMutex};
+
+static OCR_ENGINE: OnceLock<StdMutex<Option<LocalOcrEngine>>> = OnceLock::new();
+
+const MAX_DET_WIDTH: u32 = 1280;
+
 pub struct LocalOcrEngine {
     det_session: Session,
     rec_session: Session,
+    keys: Vec<String>,
 }
 
 impl LocalOcrEngine {
@@ -153,7 +162,7 @@ impl LocalOcrEngine {
         let app_dir = app_handle.path_resolver().app_data_dir()
             .ok_or_else(|| "Could not resolve app data dir".to_string())?;
         let model_dir = app_dir.join("models").join("ocr");
-        
+
         let det_path = model_dir.join("det.onnx");
         let rec_path = model_dir.join("rec.onnx");
 
@@ -171,22 +180,19 @@ impl LocalOcrEngine {
             .commit_from_file(rec_path)
             .map_err(|e: ort::Error| e.to_string())?;
 
-        Ok(Self {
-            det_session,
-            rec_session,
-        })
+        // Preload keys into struct
+        let keys = Self::load_keys_from_path(&model_dir.join("keys.txt"));
+
+        Ok(Self { det_session, rec_session, keys })
     }
 
-    fn load_keys(app_handle: &tauri::AppHandle) -> Vec<String> {
-        let app_dir = app_handle.path_resolver().app_data_dir().unwrap();
-        let keys_path = app_dir.join("models").join("ocr").join("keys.txt");
+    fn load_keys_from_path(keys_path: &std::path::Path) -> Vec<String> {
         if let Ok(content) = std::fs::read_to_string(keys_path) {
-             let mut keys: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-             keys.insert(0, "".to_string()); // CTC blank
-             keys.push(" ".to_string()); // space
-             return keys;
+            let mut keys: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+            keys.insert(0, "".to_string()); // CTC blank
+            keys.push(" ".to_string()); // space
+            return keys;
         }
-        // Fallback or default subset for demo/basic use if file missing
         vec!["".into(), "0".into(), "1".into(), "2".into(), "3".into(), "4".into(), "5".into(), "6".into(), "7".into(), "8".into(), "9".into()]
     }
 
@@ -320,31 +326,36 @@ impl LocalOcrEngine {
         Ok(([1, 3, target_h, target_w], data))
     }
 
-    pub fn recognize(&mut self, app_handle: &tauri::AppHandle, image_path: &str) -> Result<OcrResult, String> {
-        let img = image::open(image_path).map_err(|e| e.to_string())?;
+    pub fn recognize(&mut self, image_path: &str) -> Result<OcrResult, String> {
+        let mut img = image::open(image_path).map_err(|e| e.to_string())?;
+
+        // Downscale large images for faster detection (cap width at MAX_DET_WIDTH)
         let (orig_w, orig_h) = img.dimensions();
+        if orig_w > MAX_DET_WIDTH {
+            let new_h = (orig_h as f64 * MAX_DET_WIDTH as f64 / orig_w as f64) as u32;
+            img = img.resize(MAX_DET_WIDTH, new_h, FilterType::Triangle);
+        }
+        let (proc_w, proc_h) = img.dimensions();
 
         // 1. Detection
         let (det_shape, det_data, scale_w, scale_h) = Self::preprocess_det(&img)?;
         let det_input_value = Value::from_array((det_shape, det_data)).map_err(|e: ort::Error| e.to_string())?;
-        
+
         let det_outputs = self.det_session.run(inputs!["x" => det_input_value])
             .map_err(|e: ort::Error| e.to_string())?;
         let det_map = det_outputs.get("maps").ok_or("No maps output from det model")?;
-        let boxes = Self::postprocess_det(det_map, scale_w, scale_h, orig_w, orig_h)?;
+        let boxes = Self::postprocess_det(det_map, scale_w, scale_h, proc_w, proc_h)?;
 
         let mut ocr_lines = Vec::new();
         let mut full_text = String::new();
 
-        // 2. Recognition for each box
-        let keys = Self::load_keys(&app_handle); // Need app_handle, passed via recognize if possible or stored in Self
-        
+        // 2. Recognition for each box (using cached keys)
         for bbox in boxes {
             // Crop part of image
-            let crop_x = (bbox.x as u32).min(orig_w - 1);
-            let crop_y = (bbox.y as u32).min(orig_h - 1);
-            let crop_w = (bbox.w as u32).min(orig_w - crop_x);
-            let crop_h = (bbox.h as u32).min(orig_h - crop_y);
+            let crop_x = (bbox.x as u32).min(proc_w - 1);
+            let crop_y = (bbox.y as u32).min(proc_h - 1);
+            let crop_w = (bbox.w as u32).min(proc_w - crop_x);
+            let crop_h = (bbox.h as u32).min(proc_h - crop_y);
             
             if crop_w < 4 || crop_h < 4 { continue; }
 
@@ -356,7 +367,7 @@ impl LocalOcrEngine {
                 .map_err(|e: ort::Error| e.to_string())?;
             
             let logits = rec_outputs.get("output").or_else(|| rec_outputs.get("logits")).ok_or("No output from rec model")?;
-            let line_text = Self::greedy_decode(logits, &keys)?;
+            let line_text = Self::greedy_decode(logits, &self.keys)?;
             
             if line_text.trim().is_empty() { continue; }
 
@@ -387,17 +398,24 @@ impl LocalOcrEngine {
 }
 
 pub fn recognize_text_local(app_handle: &tauri::AppHandle, image_path: &str) -> Result<OcrResult, String> {
-    // Try local engine first
-    match LocalOcrEngine::new(app_handle) {
-        Ok(mut engine) => {
-            println!("[OCR] Using Local RapidOCR Engine");
-            engine.recognize(app_handle, image_path)
-        }
-        Err(e) => {
-            println!("[OCR] Local Engine failed: {}. Falling back to Windows API", e);
-            recognize_text(image_path)
+    let cell = OCR_ENGINE.get_or_init(|| StdMutex::new(None));
+    let mut guard = cell.lock().map_err(|e| format!("OCR engine lock poisoned: {}", e))?;
+
+    // Initialize on first use
+    if guard.is_none() {
+        match LocalOcrEngine::new(app_handle) {
+            Ok(engine) => {
+                println!("[OCR] Local RapidOCR Engine initialized (cached)");
+                *guard = Some(engine);
+            }
+            Err(e) => {
+                println!("[OCR] Local Engine init failed: {}. Falling back to Windows API", e);
+                return recognize_text(image_path);
+            }
         }
     }
+
+    guard.as_mut().unwrap().recognize(image_path)
 }
 
 #[cfg(not(target_os = "windows"))]

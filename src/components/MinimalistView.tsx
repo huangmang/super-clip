@@ -13,6 +13,7 @@ import {
     Folder as FolderIcon,
 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
+import { t } from "../i18n";
 
 interface Clip {
     id: number;
@@ -45,25 +46,25 @@ interface MinimalistViewProps {
 }
 
 const CATEGORIES = [
-    { id: "all",        label: "全部",   icon: Zap },
-    { id: "history",    label: "剪贴板", icon: Clock },
-    { id: "everything", label: "本地文件", icon: Search },
-    { id: "doc",        label: "文档",   icon: FileText },
-    { id: "image",      label: "图片",   icon: ImageIcon },
-    { id: "link",       label: "链接",   icon: LinkIcon },
-    { id: "code",       label: "代码",   icon: CodeIcon },
-    { id: "exe",        label: "程序",   icon: Package },
-    { id: "folder",     label: "文件夹", icon: FolderIcon },
+    { id: "all",        i18nKey: "mini.cat_all",        icon: Zap },
+    { id: "history",    i18nKey: "mini.cat_history",     icon: Clock },
+    { id: "everything", i18nKey: "mini.cat_everything",  icon: Search },
+    { id: "doc",        i18nKey: "mini.cat_doc",         icon: FileText },
+    { id: "image",      i18nKey: "mini.cat_image",       icon: ImageIcon },
+    { id: "link",       i18nKey: "mini.cat_link",        icon: LinkIcon },
+    { id: "code",       i18nKey: "mini.cat_code",        icon: CodeIcon },
+    { id: "exe",        i18nKey: "mini.cat_exe",         icon: Package },
+    { id: "folder",     i18nKey: "mini.cat_folder",      icon: FolderIcon },
 ];
 
-const TYPE_META: Record<string, { icon: React.ElementType; gradient: string; label: string }> = {
-    text:   { icon: FileText,   gradient: "from-slate-500/20 to-slate-600/10", label: "文本" },
-    image:  { icon: ImageIcon,  gradient: "from-rose-500/20 to-pink-600/10",  label: "图片" },
-    link:   { icon: LinkIcon,   gradient: "from-sky-500/20 to-cyan-600/10",   label: "链接" },
-    code:   { icon: CodeIcon,   gradient: "from-violet-500/20 to-purple-600/10", label: "代码" },
-    file:   { icon: FileIcon,   gradient: "from-amber-500/20 to-orange-600/10",  label: "文件" },
-    folder: { icon: FolderIcon, gradient: "from-amber-500/20 to-orange-600/10",  label: "文件夹" },
-    exe:    { icon: Package,    gradient: "from-indigo-500/20 to-blue-600/10", label: "程序" },
+const TYPE_META: Record<string, { icon: React.ElementType; gradient: string; i18nKey: string }> = {
+    text:   { icon: FileText,   gradient: "from-slate-500/20 to-slate-600/10", i18nKey: "tab.text" },
+    image:  { icon: ImageIcon,  gradient: "from-rose-500/20 to-pink-600/10",  i18nKey: "tab.image" },
+    link:   { icon: LinkIcon,   gradient: "from-sky-500/20 to-cyan-600/10",   i18nKey: "tab.link" },
+    code:   { icon: CodeIcon,   gradient: "from-violet-500/20 to-purple-600/10", i18nKey: "tab.code" },
+    file:   { icon: FileIcon,   gradient: "from-amber-500/20 to-orange-600/10",  i18nKey: "tab.file" },
+    folder: { icon: FolderIcon, gradient: "from-amber-500/20 to-orange-600/10",  i18nKey: "mini.cat_folder" },
+    exe:    { icon: Package,    gradient: "from-indigo-500/20 to-blue-600/10", i18nKey: "mini.cat_exe" },
 };
 
 const MinimalistView: React.FC<MinimalistViewProps> = ({
@@ -135,7 +136,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
     }, [selectedIndex, results, onSelect, onCopy, onExit, fileCategory, setFileCategory]);
 
     const getPreview = (clip: Clip): string => {
-        if (clip.type === "image") return "图片内容";
+        if (clip.type === "image") return t('mini.image_content');
         const text = clip.content.trim().replace(/\n/g, " ");
         return text.length > 72 ? text.slice(0, 72) + "…" : text;
     };
@@ -143,12 +144,12 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
     const getTimeAgo = (dateStr: string): string => {
         const diff = Date.now() - new Date(dateStr).getTime();
         const mins = Math.floor(diff / 60000);
-        if (mins < 1) return "刚刚";
-        if (mins < 60) return `${mins}分钟前`;
+        if (mins < 1) return t('mini.just_now');
+        if (mins < 60) return t('mini.minutes_ago', { n: mins });
         const hours = Math.floor(mins / 60);
-        if (hours < 24) return `${hours}小时前`;
+        if (hours < 24) return t('mini.hours_ago', { n: hours });
         const days = Math.floor(hours / 24);
-        return `${days}天前`;
+        return t('mini.days_ago', { n: days });
     };
 
     return (
@@ -183,7 +184,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                         type="text"
                         value={search}
                         onChange={(e) => onSearchChange(e.target.value)}
-                        placeholder="搜索全部历史记录 或 文件…"
+                        placeholder={t('mini.placeholder')}
                         className="w-full bg-transparent py-4 pl-13 pr-5 text-[15px] outline-none font-medium tracking-wide placeholder:opacity-30"
                         style={{ paddingLeft: "48px", color: "var(--text-main)" }}
                     />
@@ -207,11 +208,11 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                             }`}
                         >
                             <cat.icon size={12} className={fileCategory === cat.id ? "animate-pulse" : "group-hover:scale-110 transition-transform"} />
-                            {cat.label}
+                            {t(cat.i18nKey)}
                         </button>
                     ))}
                     <div className="ml-auto sticky right-0 flex items-center pl-4 bg-gradient-to-l from-[var(--bg-color)] to-transparent pointer-events-none">
-                        <div className="text-[10px] opacity-10 font-bold tracking-tight whitespace-nowrap">Tab 切换</div>
+                        <div className="text-[10px] opacity-10 font-bold tracking-tight whitespace-nowrap">{t('mini.tab_switch')}</div>
                     </div>
                 </div>
             </div>
@@ -226,7 +227,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                             <Search size={24} className="text-indigo-500/40" />
                         </div>
                         <p className="text-white/20 text-sm font-medium">
-                            {search ? "没有匹配的结果" : "输入关键词开始搜索"}
+                            {search ? t('mini.no_results') : t('mini.type_to_search')}
                         </p>
                     </div>
                 ) : (
@@ -325,7 +326,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                                             }}>
                                             {clip.is_file 
                                                 ? (clip.file_info?.is_folder ? "文件夹" : (displayType === "exe" ? "程序" : "文件")) 
-                                                : meta.label
+                                                : t(meta.i18nKey)
                                             }
                                         </span>
                                         {clip.is_file ? (
@@ -358,7 +359,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                                         style={{ animation: "fadeSlideIn 0.2s ease-out" }}>
                                         {clip.is_file ? (
                                             <>
-                                                <span className="text-[10px] font-bold text-indigo-500">打开文件</span>
+                                                <span className="text-[10px] font-bold text-indigo-500">{t('mini.open_file')}</span>
                                                 <CornerDownLeft size={10} className="text-indigo-600" />
                                             </>
                                         ) : (
@@ -380,10 +381,10 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                 }}>
                 <div className="flex items-center gap-5">
                     {[
-                        { keys: "↑↓", label: "导航" },
-                        { keys: "Tab", label: "切换分类" },
-                        { keys: "Alt+1~8", label: "快选" },
-                        { keys: "Enter", label: "执行" },
+                        { keys: "↑↓", label: t('mini.navigate') },
+                        { keys: "Tab", label: t('mini.switch_cat') },
+                        { keys: "Alt+1~8", label: t('mini.quick_select') },
+                        { keys: "Enter", label: t('mini.execute') },
                     ].map(item => (
                         <span key={item.keys} className="flex items-center gap-1.5 text-[9px] font-semibold"
                             style={{ color: "var(--text-dim)", opacity: 0.6 }}>
@@ -398,7 +399,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                 <div className="flex items-center gap-1.5 text-[9px] font-semibold"
                     style={{ color: "var(--text-dim)", opacity: 0.6 }}>
                     <Zap size={9} />
-                    {results.length} 条记录
+                    {t('mini.records', { n: results.length })}
                 </div>
             </div>
         </div>
