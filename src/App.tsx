@@ -35,6 +35,19 @@ import { LayoutDashboard } from "lucide-react";
 import Tooltip from "./components/Tooltip";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark, prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import DOMPurify from 'dompurify';
+
+const sanitizeHtml = (html: string): string => {
+    try {
+        return DOMPurify.sanitize(html, {
+            USE_PROFILES: { html: true },
+            FORBID_TAGS: ['style', 'link', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'autofocus'],
+        });
+    } catch {
+        return '';
+    }
+};
 
 const getGroupLabel = (dateStr: string): string => {
     const d = new Date(dateStr);
@@ -111,6 +124,7 @@ interface Clip {
     ocr_text?: string | null;
     ocr_lines?: string | null;
     source_app?: string | null;
+    content_html?: string | null;
 }
 
 // Extracted to top-level to avoid re-creation on every render
@@ -384,7 +398,7 @@ function App() {
     const executeCopy = useCallback(async (clip: Clip, shouldPaste: boolean = false) => {
         console.log("[DEBUG] executeCopy called for item:", clip.id, "Type:", clip.type, "shouldPaste:", shouldPaste);
         try {
-            await invoke("copy_to_clipboard", { content: clip.content, kind: clip.type });
+            await invoke("copy_to_clipboard", { content: clip.content, kind: clip.type, contentHtml: clip.content_html ?? null });
             setCopyFeedback(true);
             setTimeout(() => setCopyFeedback(false), 1500);
 
@@ -1032,6 +1046,11 @@ function App() {
                             </div>
                         )}
                     </div>
+                ) : clip.content_html && clip.content_html.length < 50000 ? (
+                    <div
+                        className={`rich-text-preview text-[var(--text-main)] break-words text-sm leading-relaxed w-full transition-all duration-300 ${!isExpanded && isLongText ? 'max-h-[84px] overflow-hidden' : ''}`}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(clip.content_html) }}
+                    />
                 ) : (
                     <div className={`text-[var(--text-main)] break-words whitespace-pre-wrap font-sans text-sm leading-relaxed w-full transition-all duration-300 ${!isExpanded && isLongText ? 'max-h-[84px] overflow-hidden' : ''}`}>
                         <HighlightText text={isExpanded || !isLongText ? clip.content : clip.content.slice(0, MAX_LENGTH) + "..."} highlight={search} />
@@ -1369,6 +1388,14 @@ function App() {
                                                         clip.type === 'link' ? 'bg-blue-900/20 text-blue-500 border-blue-500/20' :
                                                             'bg-[var(--input-bg)] text-[var(--text-dim)] border-[var(--border-color)]'
                                                     }`}>{clip.type}</span>
+                                                {clip.content_html && (
+                                                    <span
+                                                        title={t('badge.rich_text_tip')}
+                                                        className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-amber-900/20 text-amber-400 border-amber-500/20"
+                                                    >
+                                                        {t('badge.rich_text')}
+                                                    </span>
+                                                )}
                                                 <span className="text-gray-400">{new Date(clip.created_at).toLocaleString()}</span>
                                                 {clip.source_app && (
                                                     <button

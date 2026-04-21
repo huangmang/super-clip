@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { message as tauriMessage } from "@tauri-apps/api/dialog";
-import { X, Settings as SettingsIcon, Save, RotateCcw, Globe } from "lucide-react";
+import { message as tauriMessage, save as saveDialog, open as openDialog, confirm as confirmDialog } from "@tauri-apps/api/dialog";
+import { X, Settings as SettingsIcon, Save, RotateCcw, Globe, Download, Upload } from "lucide-react";
 import Tooltip from "./Tooltip";
 import { t, getLocale, setLocale, type Locale } from "../i18n";
 
@@ -25,6 +25,61 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
     const [ignoredApps, setIgnoredApps] = useState<string[]>([]);
     const [newIgnoredApp, setNewIgnoredApp] = useState("");
     const [locale, setLocaleState] = useState<Locale>(getLocale());
+    const [dataBusy, setDataBusy] = useState<"export" | "import" | false>(false);
+
+    const handleExport = async () => {
+        if (dataBusy) return;
+        try {
+            const ts = new Date();
+            const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, "0")}${String(ts.getDate()).padStart(2, "0")}-${String(ts.getHours()).padStart(2, "0")}${String(ts.getMinutes()).padStart(2, "0")}`;
+            const path = await saveDialog({
+                defaultPath: `super-clip-backup-${stamp}.json`,
+                filters: [{ name: "JSON", extensions: ["json"] }],
+            });
+            if (!path) return;
+            setDataBusy("export");
+            const res = await invoke<{ count: number; size_bytes: number }>("export_clips_to_json", { path });
+            const sizeKb = Math.max(1, Math.round(res.size_bytes / 1024));
+            setMessage({ text: t('settings.export_success').replace("{count}", String(res.count)).replace("{size}", `${sizeKb} KB`), type: "success" });
+            setTimeout(() => setMessage(null), 3500);
+        } catch (e) {
+            setMessage({ text: String(e), type: "error" });
+            setTimeout(() => setMessage(null), 4500);
+        } finally {
+            setDataBusy(false);
+        }
+    };
+
+    const handleImport = async () => {
+        if (dataBusy) return;
+        try {
+            const picked = await openDialog({
+                multiple: false,
+                filters: [{ name: "JSON", extensions: ["json"] }],
+            });
+            if (!picked || Array.isArray(picked)) return;
+            const confirmed = await confirmDialog(t('settings.import_confirm'), { title: "Super Clip", type: "info" });
+            if (!confirmed) return;
+            setDataBusy("import");
+            const res = await invoke<{ imported: number; skipped: number; snippets_imported: number; errors: number }>(
+                "import_clips_from_json", { path: picked }
+            );
+            setMessage({
+                text: t('settings.import_success')
+                    .replace("{added}", String(res.imported))
+                    .replace("{skipped}", String(res.skipped))
+                    .replace("{snippets}", String(res.snippets_imported))
+                    .replace("{errors}", String(res.errors)),
+                type: res.errors > 0 ? "error" : "success",
+            });
+            setTimeout(() => setMessage(null), 5000);
+        } catch (e) {
+            setMessage({ text: String(e), type: "error" });
+            setTimeout(() => setMessage(null), 4500);
+        } finally {
+            setDataBusy(false);
+        }
+    };
 
     // Snippets
     interface Snippet { id: number; name: string; content: string; trigger_text?: string | null; created_at: string; }
@@ -527,6 +582,34 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                                 ))}
                             </div>
                         )}
+                    </div>
+
+                    {/* Data Management — Export / Import JSON */}
+                    <div className="space-y-2 border-t border-white/5 pt-6">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
+                            {t('settings.data_management')}
+                        </label>
+                        <p className="text-[10px] text-gray-600">
+                            {t('settings.data_management_desc')}
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleExport}
+                                disabled={!!dataBusy}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium bg-[var(--input-bg)] border border-[var(--border-color)] text-[var(--text-main)] hover:border-indigo-500/50 hover:text-indigo-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Download size={14} />
+                                {dataBusy === "export" ? t('settings.exporting') : t('settings.export')}
+                            </button>
+                            <button
+                                onClick={handleImport}
+                                disabled={!!dataBusy}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium bg-[var(--input-bg)] border border-[var(--border-color)] text-[var(--text-main)] hover:border-indigo-500/50 hover:text-indigo-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Upload size={14} />
+                                {dataBusy === "import" ? t('settings.importing') : t('settings.import')}
+                            </button>
+                        </div>
                     </div>
 
                 </>

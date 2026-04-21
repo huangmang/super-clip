@@ -242,6 +242,21 @@ const translations: Record<string, Record<Locale, string>> = {
     'float.close': { zh: '关闭', en: 'Close' },
     'float.copied': { zh: '复制成功', en: 'Copied!' },
     'float.copy_text': { zh: '复制文本', en: 'Copy text' },
+
+    // ── Rich text badge ──
+    'badge.rich_text': { zh: '富文本', en: 'RTF' },
+    'badge.rich_text_tip': { zh: '此条目保留了原始格式（加粗/颜色/链接等），粘贴到支持富文本的应用会保留样式', en: 'This clip preserves the original formatting (bold/color/links). Pasting into a rich-text target keeps the styling.' },
+
+    // ── Data management (Export / Import) ──
+    'settings.data_management': { zh: '数据管理', en: 'Data Management' },
+    'settings.data_management_desc': { zh: '导出所有剪贴板历史为 JSON 备份；或从备份文件合并导入（重复内容自动跳过）', en: 'Export full clipboard history as a JSON backup, or import (merge) from a backup — duplicates are automatically skipped.' },
+    'settings.export': { zh: '导出为 JSON', en: 'Export to JSON' },
+    'settings.exporting': { zh: '导出中…', en: 'Exporting…' },
+    'settings.import': { zh: '从 JSON 导入', en: 'Import from JSON' },
+    'settings.importing': { zh: '导入中…', en: 'Importing…' },
+    'settings.export_success': { zh: '已导出 {count} 条记录（{size}）', en: 'Exported {count} clips ({size})' },
+    'settings.import_confirm': { zh: '确认合并导入？相同内容的条目将自动跳过，不会覆盖现有历史。', en: 'Merge import? Duplicate entries will be skipped — existing history will not be overwritten.' },
+    'settings.import_success': { zh: '新增 {added} 条，跳过 {skipped} 条，片段 {snippets} 条，错误 {errors}', en: 'Imported {added}, skipped {skipped}, snippets {snippets}, errors {errors}' },
 };
 
 // ── Runtime ──

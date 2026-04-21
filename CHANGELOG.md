@@ -2,6 +2,45 @@
 
 所有对 Super Clip 的重大功能改进和 Bug 修复都会记录在此。
 
+## [0.5.0] - 2026-04-21
+
+### 富文本 (HTML) 保留 — 补齐最大短板
+
+对标 Ditto / Paste 做产品审视后,富文本丢失是用户最易劝退的短板。本版本完整支持 Windows `CF_HTML` 格式的捕获、存储与粘贴回写 —— 从 Chrome / Edge / Word / 飞书 / Notion / Gmail / Slack / Obsidian 复制过来的带格式内容,粘到支持富文本的目标里时格式会被完整保留。
+
+- **CF_HTML 捕获**(`src-tauri/src/clipboard_monitor.rs`):每次 text clip 进库时,额外读取 Windows `CF_HTML` 剪贴板格式。手写 `parse_cf_html_fragment()` 按 `StartFragment:` / `EndFragment:` 字节偏移提取用户实际选中的片段,跳过浏览器/Office 塞进来的样板 HTML。
+- **CF_HTML 回写**(`src-tauri/src/commands.rs`):`copy_to_clipboard` 支持新的 `content_html` 可选参数,在 Windows 侧按规范构造 `Version:0.9 / StartHTML / EndHTML / StartFragment / EndFragment` 4 组 10 位字节偏移,原子写入 `CF_UNICODETEXT + CF_HTML`。粘进 Word / 邮件 / IM 时保留格式,粘进记事本时自动降级成纯文本。
+- **列表内渲染**:文本 clip 行内直接渲染富文本(加粗、颜色、链接、列表、表格),用 `DOMPurify` 严格白名单清洗(禁 `<script>` / `<iframe>` / `on*` 事件);超过 50KB 的 HTML 自动降级到纯文本视图防止性能问题。
+- **琥珀色 "RTF" 徽章**:列表每条支持富文本的 clip,type badge 旁多一个醒目的 RTF 小标签 + tooltip 说明,一眼可识别。
+
+### 导出 / 导入 JSON — 让用户敢 all-in
+
+之前剪贴板历史完全锁死在本地 SQLite,不能备份不能迁移,心理上"只是个玩具"。本版本补上全量备份/恢复通道。
+
+- **导出**(`export_clips_to_json`):Settings → 数据管理 → "导出为 JSON"。一键把所有 clips + snippets + 当前 app 版本号打包到 JSON。图片 clip 以 base64 内嵌,保证跨机器 round-trip(换电脑恢复不丢图)。成功 toast 显示条数和文件大小。
+- **导入**(`import_clips_from_json`):Settings → 数据管理 → "从 JSON 导入"。**合并去重策略** —— 相同 `content + type` 的条目自动跳过,绝不覆盖现有历史;新图片按 SHA-256 去重后落入 images 目录。事务内批量 insert,5000 条 < 1s。结果 toast: `新增 N / 跳过 M / 片段 K / 错误 E`。
+- **数据自包含**:导出包含 `version / exported_at / app_version / clips[] / snippets[]`,未来字段扩展时自动向后兼容(带 `version` 校验,新版本 JSON 导入老版本会明确报错)。
+
+### DB Schema 迁移机制
+
+由于本版本需要给 `clips` 表新增 `content_html` 列,顺手把多年来的 "`CREATE TABLE IF NOT EXISTS` + 一串吞错误的 `let _ = ALTER TABLE`" 补丁升级为正式版本化迁移:
+
+- 引入 `PRAGMA user_version` 跟踪 schema 版本,历史库启动时自动走 v0 → v1 升级路径。
+- 新字段:`clips.content_html TEXT`,可空,向后兼容所有老数据。
+- `insert_clip` 重复 content 时用 `COALESCE` 补齐历史缺失的 html(以前存过的纯文本,下次再复制时自动获得 RTF 版本)。
+
+### 体验微调
+
+- **高频词气泡字号放大**(`Dashboard.tsx`):之前数量是 8px 且仅 hover 才显示,靠直觉找不到;改为词 13-19px + 数量 11-14px 常驻在词下方,气泡最大直径 92px → 112px,一眼看到"词 + 频次"两个核心信息。
+- **i18n 新键**:`badge.rich_text`、`settings.data_management`、`settings.export`、`settings.import`、`settings.export_success`、`settings.import_confirm`、`settings.import_success` 等,中英双语完整覆盖新功能。
+
+### 依赖新增
+
+- `dompurify ^3.4.0` + `@types/dompurify`(前端 HTML 清洗)
+- `base64 = "0.21"`(Rust 侧 JSON 导出时图片编码)
+
+---
+
 ## [0.4.1] - 2026-04-15
 
 ### 产品体验优化

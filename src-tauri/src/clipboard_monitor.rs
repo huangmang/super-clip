@@ -9,6 +9,49 @@ use tauri::Manager;
 use crate::database::{self, DbState};
 use crate::detect;
 
+/// Read Windows CF_HTML from the clipboard, returning the user-selected fragment
+/// (the part between <!--StartFragment--> / <!--EndFragment-->) when available,
+/// or the full HTML blob otherwise. Returns None if CF_HTML is not present.
+#[cfg(target_os = "windows")]
+fn try_read_cf_html() -> Option<String> {
+    use clipboard_win::{Getter, Clipboard as WinClipboard, register_format};
+    use clipboard_win::formats::RawData;
+
+    let _clip = WinClipboard::new_attempts(5).ok()?;
+    let fmt_id = register_format("HTML Format")?;
+
+    let mut bytes = Vec::<u8>::new();
+    let _ = RawData(fmt_id.get()).read_clipboard(&mut bytes).ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let raw = String::from_utf8_lossy(&bytes).to_string();
+    Some(parse_cf_html_fragment(&raw).unwrap_or(raw))
+}
+
+#[cfg(target_os = "windows")]
+fn parse_cf_html_fragment(raw: &str) -> Option<String> {
+    let start = find_cf_html_offset(raw, "StartFragment:")?;
+    let end = find_cf_html_offset(raw, "EndFragment:")?;
+    let bytes = raw.as_bytes();
+    if start >= bytes.len() || end > bytes.len() || start >= end {
+        return None;
+    }
+    std::str::from_utf8(&bytes[start..end])
+        .ok()
+        .map(|s| s.trim().trim_matches('\u{0}').to_string())
+        .filter(|s| !s.is_empty())
+}
+
+#[cfg(target_os = "windows")]
+fn find_cf_html_offset(raw: &str, key: &str) -> Option<usize> {
+    let i = raw.find(key)?;
+    let rest = &raw[i + key.len()..];
+    let line_end = rest.find(|c: char| c == '\r' || c == '\n').unwrap_or(rest.len());
+    rest[..line_end].trim().parse::<usize>().ok()
+}
+
 // ── Shared clipboard state ──
 
 struct ClipboardState {
@@ -78,7 +121,7 @@ fn check_clipboard(app_handle: &tauri::AppHandle, state: &mut ClipboardState) {
                             let source = detect::get_active_window_source();
                             state.last_img_hash = hash;
                             state.last_img_dims = dims;
-                            handle_new_clip(app_handle, path_str, "image".to_string(), source);
+                            handle_new_clip(app_handle, path_str, "image".to_string(), source, None);
                         }
                     }
                 }
@@ -103,18 +146,24 @@ fn check_clipboard(app_handle: &tauri::AppHandle, state: &mut ClipboardState) {
             if !files.is_empty() && files[0] != state.last_content {
                 let source = detect::get_active_window_source();
                 state.last_content = files[0].clone();
-                handle_new_clip(app_handle, files[0].clone(), "file".to_string(), source);
+                handle_new_clip(app_handle, files[0].clone(), "file".to_string(), source, None);
             }
         }
     }
 
-    // 3. Try Text
+    // 3. Try Text (+ opportunistically CF_HTML on Windows)
     if let Ok(text) = cb.get_text() {
         if text != state.last_content && !text.trim().is_empty() {
             let type_ = detect::detect_type(&text);
             let source = detect::get_active_window_source();
             state.last_content = text.clone();
-            handle_new_clip(app_handle, text, type_, source);
+
+            #[cfg(target_os = "windows")]
+            let html = try_read_cf_html();
+            #[cfg(not(target_os = "windows"))]
+            let html: Option<String> = None;
+
+            handle_new_clip(app_handle, text, type_, source, html);
         }
     }
 }
@@ -281,7 +330,7 @@ fn resolve_images_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBu
     Ok(idir)
 }
 
-fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String, source: Option<String>) {
+fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String, source: Option<String>, content_html: Option<String>) {
     let db = app_handle.state::<DbState>();
     let conn = db.0.lock().unwrap();
 
@@ -303,14 +352,14 @@ fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String,
         .unwrap_or_else(|| "ask".to_string());
 
     if mode == "always" {
-        if database::insert_clip(&conn, content, kind, source).is_ok() {
+        if database::insert_clip(&conn, content, kind, source, content_html).is_ok() {
             let _ = app_handle.emit_all("clip:created", ());
         }
     } else {
         drop(conn);
 
         let state = app_handle.state::<crate::PendingClipState>();
-        *state.0.lock().unwrap() = Some((content, kind, source));
+        *state.0.lock().unwrap() = Some((content, kind, source, content_html));
 
         let id = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

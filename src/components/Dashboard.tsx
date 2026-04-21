@@ -33,6 +33,7 @@ interface Clip {
     is_pinned: boolean;
     created_at: string;
     source_app?: string | null;
+    content_html?: string | null;
 }
 
 interface DashboardProps {
@@ -452,15 +453,15 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                 <div className="flex flex-wrap items-center justify-center gap-2 py-2 min-h-[80px]">
                                     {sorted.map(([word, count], i) => {
                                         const weight = maxC === minC ? 0.5 : (count - minC) / (maxC - minC);
-                                        const size = 44 + weight * 48; // 44px ~ 92px
+                                        const size = 56 + weight * 56; // 56px ~ 112px
                                         const colorClass = BUBBLE_COLORS[i % BUBBLE_COLORS.length];
-                                        const opacity = 0.4 + weight * 0.6;
+                                        const opacity = 0.55 + weight * 0.45;
 
                                         return (
                                             <button
                                                 key={word}
                                                 onClick={() => onFilter(word)}
-                                                className={`relative rounded-full bg-gradient-to-br ${colorClass} flex items-center justify-center
+                                                className={`relative rounded-full bg-gradient-to-br ${colorClass} flex flex-col items-center justify-center
                                                     cursor-pointer transition-all duration-300
                                                     hover:scale-110 hover:shadow-lg active:scale-95 group bubble-float`}
                                                 style={{
@@ -471,14 +472,12 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                                 }}
                                                 title={`${word}: ${count}`}
                                             >
-                                                <span className="text-white font-bold drop-shadow-md leading-none text-center px-1 truncate"
-                                                    style={{ fontSize: `${Math.max(10, 10 + weight * 5)}px` }}>
+                                                <span className="text-white font-bold drop-shadow-md leading-none text-center px-1 truncate max-w-full"
+                                                    style={{ fontSize: `${Math.max(13, 13 + weight * 6)}px` }}>
                                                     {word}
                                                 </span>
-                                                {/* Count badge on hover */}
-                                                <span className="absolute -top-1 -right-1 bg-black/80 text-white text-[8px] font-mono font-bold
-                                                    px-1.5 py-0.5 rounded-full border border-white/10
-                                                    opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                <span className="text-white/90 font-mono font-bold leading-none mt-1 drop-shadow"
+                                                    style={{ fontSize: `${Math.max(11, 10 + weight * 3)}px` }}>
                                                     {count}
                                                 </span>
                                             </button>

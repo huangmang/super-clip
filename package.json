@@ -1,7 +1,7 @@
 {
     "name": "super-clip",
     "private": true,
-    "version": "0.4.0",
+    "version": "0.5.0",
     "type": "module",
     "scripts": {
         "dev": "vite",
@@ -11,6 +11,8 @@
     },
     "dependencies": {
         "@tauri-apps/api": "^1.5.3",
+        "@types/dompurify": "^3.0.5",
+        "dompurify": "^3.4.0",
         "lucide-react": "^0.344.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",

@@ -57,6 +57,7 @@ pub struct Clip {
     pub ocr_lines: Option<String>,
     pub source_app: Option<String>,
     pub tags: Option<String>,
+    pub content_html: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,10 +104,11 @@ fn row_to_clip(row: &rusqlite::Row<'_>) -> rusqlite::Result<Clip> {
         ocr_lines: row.get(7).ok(),
         source_app: row.get(8).ok(),
         tags: row.get(9).ok(),
+        content_html: row.get(10).ok(),
     })
 }
 
-const CLIP_SELECT_COLS: &str = "id, content, type, is_favorite, is_pinned, created_at, ocr_text, ocr_lines, source_app, tags";
+const CLIP_SELECT_COLS: &str = "id, content, type, is_favorite, is_pinned, created_at, ocr_text, ocr_lines, source_app, tags, content_html";
 
 // ── Public API (all take &Connection instead of reopening) ──
 
@@ -138,12 +140,23 @@ pub fn init(app_handle: &AppHandle) -> AppResult<Connection> {
         [],
     )?;
 
-    // Migrate: add columns if they don't exist
+    // Migrate: add columns if they don't exist (legacy ad-hoc additions, v0 era)
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN ocr_text TEXT", []);
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN ocr_lines TEXT", []);
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN is_pinned BOOLEAN DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN source_app TEXT", []);
     let _ = conn.execute("ALTER TABLE clips ADD COLUMN tags TEXT", []);
+
+    // Versioned migrations — apply sequentially based on PRAGMA user_version
+    let current_version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    if current_version < 1 {
+        // v1: Rich-text (HTML) preservation
+        let _ = conn.execute("ALTER TABLE clips ADD COLUMN content_html TEXT", []);
+        conn.execute("PRAGMA user_version = 1", [])?;
+    }
 
     // Indexes — optimized for actual query patterns
     let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_created_at ON clips(created_at)", []);
@@ -204,7 +217,13 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub fn insert_clip(conn: &Connection, content: String, type_: String, source_app: Option<String>) -> AppResult<i64> {
+pub fn insert_clip(
+    conn: &Connection,
+    content: String,
+    type_: String,
+    source_app: Option<String>,
+    content_html: Option<String>,
+) -> AppResult<i64> {
     let now = Utc::now().to_rfc3339();
 
     // Deduplication for non-image clips
@@ -218,14 +237,22 @@ pub fn insert_clip(conn: &Connection, content: String, type_: String, source_app
             .ok();
 
         if let Some(id) = existing {
-            conn.execute("UPDATE clips SET created_at = ?1 WHERE id = ?2", params![now, id])?;
+            // Refresh timestamp; also update HTML if we now have it and didn't before.
+            if content_html.is_some() {
+                conn.execute(
+                    "UPDATE clips SET created_at = ?1, content_html = COALESCE(content_html, ?2) WHERE id = ?3",
+                    params![now, content_html, id],
+                )?;
+            } else {
+                conn.execute("UPDATE clips SET created_at = ?1 WHERE id = ?2", params![now, id])?;
+            }
             return Ok(id);
         }
     }
 
     conn.execute(
-        "INSERT INTO clips (content, type, created_at, source_app) VALUES (?1, ?2, ?3, ?4)",
-        params![content, type_, now, source_app],
+        "INSERT INTO clips (content, type, created_at, source_app, content_html) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![content, type_, now, source_app, content_html],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -283,7 +310,7 @@ pub fn get_searchable_clips(conn: &Connection, limit: i64) -> AppResult<Vec<Sear
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![limit], |row| {
         let clip = row_to_clip(row)?;
-        let haystack: String = row.get(10)?; // 11th column (0-indexed: 10)
+        let haystack: String = row.get(11)?; // after CLIP_SELECT_COLS (11 cols, 0-indexed: 0..=10), haystack is index 11
         Ok(SearchableClip { clip, haystack })
     })?;
 
@@ -547,4 +574,51 @@ pub fn update_snippet(conn: &Connection, id: i64, name: String, content: String,
 pub fn delete_snippet(conn: &Connection, id: i64) -> AppResult<()> {
     conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+// ── Import helpers (for JSON import path) ──
+
+/// Check whether a clip with the exact same content already exists.
+/// For images, matches by stored path (already dedup'd via SHA-256 filename upstream).
+pub fn clip_exists_by_content(conn: &Connection, content: &str, type_: &str) -> AppResult<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM clips WHERE content = ?1 AND type = ?2",
+        params![content, type_],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// Raw insert bypassing dedup logic — used by the JSON import path, which has
+/// already decided that this clip is new. Preserves favorite/pinned/tags from the bundle.
+pub fn insert_clip_raw(
+    conn: &Connection,
+    clip: &Clip,
+) -> AppResult<i64> {
+    conn.execute(
+        "INSERT INTO clips (content, type, is_favorite, is_pinned, created_at, ocr_text, ocr_lines, source_app, tags, content_html)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            clip.content,
+            clip.type_,
+            clip.is_favorite,
+            clip.is_pinned,
+            clip.created_at,
+            clip.ocr_text,
+            clip.ocr_lines,
+            clip.source_app,
+            clip.tags,
+            clip.content_html,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn snippet_exists_by_name(conn: &Connection, name: &str) -> AppResult<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM snippets WHERE name = ?1",
+        params![name],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
 }

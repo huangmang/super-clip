@@ -20,7 +20,8 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 
-pub struct PendingClipState(Mutex<Option<(String, String, Option<String>)>>);
+// (content, kind, source_app, content_html)
+pub struct PendingClipState(Mutex<Option<(String, String, Option<String>, Option<String>)>>);
 
 /// Force-bring a Tauri window to the foreground (Win32 fallback).
 fn show_main_window(window: &tauri::Window) {
@@ -163,6 +164,8 @@ fn main() {
             commands::open_path,
             commands::update_clip_tags,
             commands::user_prompt_decision,
+            commands::export_clips_to_json,
+            commands::import_clips_from_json,
         ])
         .on_window_event(|event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event.event() {

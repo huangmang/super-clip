@@ -340,3 +340,27 @@ body::before {
   from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   to { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
 }
+
+/* Rich-text (HTML) clipboard preview — tamed inline styles from pasted-in sources */
+.rich-text-preview { font-size: 0.875rem; line-height: 1.55; }
+.rich-text-preview * { max-width: 100% !important; }
+.rich-text-preview img { max-height: 200px; border-radius: 6px; }
+.rich-text-preview a { color: var(--accent-color); text-decoration: underline; }
+.rich-text-preview p { margin: 0.25rem 0; }
+.rich-text-preview h1, .rich-text-preview h2, .rich-text-preview h3,
+.rich-text-preview h4, .rich-text-preview h5, .rich-text-preview h6 {
+  font-weight: 600; margin: 0.4rem 0 0.2rem;
+}
+.rich-text-preview ul, .rich-text-preview ol { margin: 0.25rem 0 0.25rem 1.25rem; }
+.rich-text-preview code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background: var(--input-bg); padding: 1px 4px; border-radius: 3px; font-size: 0.85em;
+}
+.rich-text-preview table { border-collapse: collapse; margin: 0.25rem 0; }
+.rich-text-preview td, .rich-text-preview th {
+  border: 1px solid var(--border-color); padding: 2px 6px;
+}
+.rich-text-preview blockquote {
+  border-left: 3px solid var(--accent-color); padding-left: 8px; margin: 0.25rem 0;
+  color: var(--text-dim);
+}

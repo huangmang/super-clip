@@ -23,6 +23,7 @@ interface Clip {
     is_pinned: boolean;
     created_at: string;
     source_app?: string | null;
+    content_html?: string | null;
     is_file?: boolean;
     file_info?: {
         name: string;

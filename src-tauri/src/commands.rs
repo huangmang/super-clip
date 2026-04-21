@@ -115,7 +115,12 @@ pub fn perform_ocr(app_handle: tauri::AppHandle, db: tauri::State<DbState>, id: 
 // ── Clipboard Operations ──
 
 #[tauri::command]
-pub fn copy_to_clipboard(_app_handle: tauri::AppHandle, content: String, kind: String) -> Result<(), String> {
+pub fn copy_to_clipboard(
+    _app_handle: tauri::AppHandle,
+    content: String,
+    kind: String,
+    content_html: Option<String>,
+) -> Result<(), String> {
     let handle = std::thread::spawn(move || {
         let mut last_error = String::new();
 
@@ -125,7 +130,7 @@ pub fn copy_to_clipboard(_app_handle: tauri::AppHandle, content: String, kind: S
             } else if kind == "file" {
                 copy_file(&content)
             } else {
-                copy_text(&content)
+                copy_text(&content, content_html.as_deref())
             };
 
             if res.is_ok() {
@@ -187,17 +192,74 @@ fn copy_file(content: &str) -> Result<(), String> {
     }
 }
 
-fn copy_text(content: &str) -> Result<(), String> {
+fn copy_text(content: &str, html: Option<&str>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use clipboard_win::{set_clipboard, formats};
-        set_clipboard(formats::Unicode, content).map_err(|e| format!("Set text failed: {}", e))
+        use clipboard_win::{set_clipboard, formats, Setter, Clipboard as WinClipboard, register_format};
+        use clipboard_win::formats::RawData;
+
+        // Simple case: no HTML → use single-format API
+        let Some(html_body) = html else {
+            return set_clipboard(formats::Unicode, content)
+                .map_err(|e| format!("Set text failed: {}", e));
+        };
+
+        // Dual-format: write CF_UNICODETEXT + CF_HTML atomically
+        let _clip = WinClipboard::new_attempts(5)
+            .map_err(|e| format!("WinClipboard open failed: {:?}", e))?;
+        clipboard_win::empty().map_err(|e| format!("empty failed: {:?}", e))?;
+
+        // Write Unicode text (plain fallback for apps that don't accept HTML)
+        formats::Unicode
+            .write_clipboard(&content)
+            .map_err(|e| format!("Write Unicode failed: {:?}", e))?;
+
+        // Write CF_HTML with the required metadata header
+        let fmt_id = register_format("HTML Format").ok_or_else(|| "register CF_HTML failed".to_string())?;
+        let cf_html_blob = build_cf_html_blob(html_body);
+        RawData(fmt_id.get())
+            .write_clipboard(&cf_html_blob.as_bytes())
+            .map_err(|e| format!("Write CF_HTML failed: {:?}", e))?;
+
+        Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = html; // silence unused on non-Windows
         let mut clipboard = Clipboard::new().map_err(|e| format!("Clipboard init failed: {}", e))?;
         clipboard.set_text(content).map_err(|e| format!("Set text failed: {}", e))
     }
+}
+
+/// Build a Windows CF_HTML clipboard blob with the required 4-offset metadata header.
+/// Offsets are UTF-8 byte positions into the full blob (including the header itself).
+#[cfg(target_os = "windows")]
+fn build_cf_html_blob(html_fragment: &str) -> String {
+    // Template with placeholder offsets we'll rewrite after we know real positions.
+    const PREFIX: &str = "Version:0.9\r\nStartHTML:0000000000\r\nEndHTML:0000000000\r\nStartFragment:0000000000\r\nEndFragment:0000000000\r\n";
+    const HTML_OPEN: &str = "<html><body>\r\n<!--StartFragment-->";
+    const HTML_CLOSE: &str = "<!--EndFragment-->\r\n</body></html>";
+
+    let prefix_len = PREFIX.len();
+    let html_open_len = HTML_OPEN.len();
+    let html_close_len = HTML_CLOSE.len();
+    let fragment_len = html_fragment.len();
+
+    let start_html = prefix_len;                              // at "<html>"
+    let start_fragment = prefix_len + html_open_len;          // right after <!--StartFragment-->
+    let end_fragment = start_fragment + fragment_len;         // right before <!--EndFragment-->
+    let end_html = end_fragment + html_close_len;             // end of </html>
+
+    // Build with actual numbers
+    let mut s = String::with_capacity(prefix_len + html_open_len + fragment_len + html_close_len);
+    s.push_str(&format!(
+        "Version:0.9\r\nStartHTML:{:010}\r\nEndHTML:{:010}\r\nStartFragment:{:010}\r\nEndFragment:{:010}\r\n",
+        start_html, end_html, start_fragment, end_fragment
+    ));
+    s.push_str(HTML_OPEN);
+    s.push_str(html_fragment);
+    s.push_str(HTML_CLOSE);
+    s
 }
 
 // ── Keyboard Simulation ──
@@ -448,9 +510,9 @@ pub fn user_prompt_decision(app_handle: tauri::AppHandle, db: tauri::State<DbSta
 
     if decision == "always" || decision == "once" {
         let mut data = state.0.lock().unwrap();
-        if let Some((content, kind, source)) = data.take() {
+        if let Some((content, kind, source, html)) = data.take() {
             let conn = db.0.lock().unwrap();
-            if database::insert_clip(&conn, content, kind, source).is_ok() {
+            if database::insert_clip(&conn, content, kind, source, html).is_ok() {
                 let _ = app_handle.emit_all("clip:created", ());
             }
         }
@@ -467,4 +529,175 @@ pub fn user_prompt_decision(app_handle: tauri::AppHandle, db: tauri::State<DbSta
     }
 
     Ok(())
+}
+
+// ── Export / Import ──
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ExportClip {
+    #[serde(flatten)]
+    pub clip: Clip,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub image_base64: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ExportBundle {
+    pub version: u32,
+    pub exported_at: String,
+    pub app_version: String,
+    pub clips: Vec<ExportClip>,
+    pub snippets: Vec<database::Snippet>,
+}
+
+#[derive(serde::Serialize)]
+pub struct ExportStats {
+    pub count: usize,
+    pub size_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
+pub struct ImportStats {
+    pub imported: usize,
+    pub skipped: usize,
+    pub snippets_imported: usize,
+    pub errors: usize,
+}
+
+const EXPORT_VERSION: u32 = 1;
+
+#[tauri::command]
+pub fn export_clips_to_json(db: tauri::State<DbState>, path: String) -> Result<ExportStats, String> {
+    use base64::{engine::general_purpose, Engine};
+
+    let conn = db.0.lock().unwrap();
+    let clips = database::get_all(&conn).map_err(|e| e.to_string())?;
+    let snippets = database::get_all_snippets(&conn).map_err(|e| e.to_string())?;
+    drop(conn);
+
+    // Embed image payloads as base64 so the backup is self-contained across machines.
+    let export_clips: Vec<ExportClip> = clips
+        .into_iter()
+        .map(|c| {
+            let image_base64 = if c.type_ == "image" {
+                std::fs::read(&c.content)
+                    .ok()
+                    .map(|bytes| general_purpose::STANDARD.encode(&bytes))
+            } else {
+                None
+            };
+            ExportClip { clip: c, image_base64 }
+        })
+        .collect();
+
+    let count = export_clips.len();
+    let bundle = ExportBundle {
+        version: EXPORT_VERSION,
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        clips: export_clips,
+        snippets,
+    };
+
+    let file = std::fs::File::create(&path).map_err(|e| format!("Create file failed: {}", e))?;
+    let writer = std::io::BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, &bundle).map_err(|e| format!("Serialize failed: {}", e))?;
+
+    let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    Ok(ExportStats { count, size_bytes })
+}
+
+#[tauri::command]
+pub fn import_clips_from_json(
+    app_handle: tauri::AppHandle,
+    db: tauri::State<DbState>,
+    path: String,
+) -> Result<ImportStats, String> {
+    use base64::{engine::general_purpose, Engine};
+    use sha2::{Digest, Sha256};
+
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("Read file failed: {}", e))?;
+    let bundle: ExportBundle = serde_json::from_str(&raw)
+        .map_err(|e| format!("Parse JSON failed: {}", e))?;
+
+    if bundle.version > EXPORT_VERSION {
+        return Err(format!(
+            "Backup version {} is newer than supported ({}). Please update Super Clip.",
+            bundle.version, EXPORT_VERSION
+        ));
+    }
+
+    // Resolve images directory once — same path the clipboard monitor writes to.
+    let images_dir = app_handle
+        .path_resolver()
+        .app_data_dir()
+        .ok_or_else(|| "app_data_dir unavailable".to_string())?
+        .join("images");
+    let _ = std::fs::create_dir_all(&images_dir);
+
+    let conn = db.0.lock().unwrap();
+    let mut stats = ImportStats {
+        imported: 0,
+        skipped: 0,
+        snippets_imported: 0,
+        errors: 0,
+    };
+
+    // Clips
+    for export_clip in bundle.clips {
+        let mut clip = export_clip.clip;
+
+        // For images: decode base64, dedup by SHA-256, write to images dir, rewrite content path.
+        if clip.type_ == "image" {
+            let Some(b64) = export_clip.image_base64 else {
+                // Legacy / malformed: absolute path from another machine, skip.
+                stats.errors += 1;
+                continue;
+            };
+            let Ok(bytes) = general_purpose::STANDARD.decode(b64.as_bytes()) else {
+                stats.errors += 1;
+                continue;
+            };
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let hash = format!("{:x}", hasher.finalize());
+            let img_path = images_dir.join(format!("{}.png", hash));
+
+            if !img_path.exists() {
+                if std::fs::write(&img_path, &bytes).is_err() {
+                    stats.errors += 1;
+                    continue;
+                }
+            }
+            clip.content = img_path.to_string_lossy().to_string();
+        }
+
+        // Dedup: skip if identical (content, type) already present.
+        let exists = database::clip_exists_by_content(&conn, &clip.content, &clip.type_)
+            .unwrap_or(false);
+        if exists {
+            stats.skipped += 1;
+            continue;
+        }
+
+        match database::insert_clip_raw(&conn, &clip) {
+            Ok(_) => stats.imported += 1,
+            Err(_) => stats.errors += 1,
+        }
+    }
+
+    // Snippets — dedup by name
+    for snippet in bundle.snippets {
+        if database::snippet_exists_by_name(&conn, &snippet.name).unwrap_or(false) {
+            continue;
+        }
+        if database::insert_snippet(&conn, snippet.name, snippet.content, snippet.trigger_text).is_ok() {
+            stats.snippets_imported += 1;
+        }
+    }
+
+    drop(conn);
+    let _ = app_handle.emit_all("clip:created", ());
+
+    Ok(stats)
 }
