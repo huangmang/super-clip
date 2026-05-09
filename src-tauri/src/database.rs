@@ -140,22 +140,63 @@ pub fn init(app_handle: &AppHandle) -> AppResult<Connection> {
         [],
     )?;
 
-    // Migrate: add columns if they don't exist (legacy ad-hoc additions, v0 era)
-    let _ = conn.execute("ALTER TABLE clips ADD COLUMN ocr_text TEXT", []);
-    let _ = conn.execute("ALTER TABLE clips ADD COLUMN ocr_lines TEXT", []);
-    let _ = conn.execute("ALTER TABLE clips ADD COLUMN is_pinned BOOLEAN DEFAULT 0", []);
-    let _ = conn.execute("ALTER TABLE clips ADD COLUMN source_app TEXT", []);
-    let _ = conn.execute("ALTER TABLE clips ADD COLUMN tags TEXT", []);
-
-    // Versioned migrations — apply sequentially based on PRAGMA user_version
+    // Versioned migrations — apply sequentially based on PRAGMA user_version.
+    // Legacy ad-hoc ALTER TABLEs (v0 era: ocr_text / ocr_lines / is_pinned /
+    // source_app / tags) are now gated by `current_version == 0` instead of
+    // running on every startup and silently swallowing real errors (disk
+    // full, schema mismatch, etc.) via `let _ =`.
     let current_version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap_or(0);
 
+    if current_version == 0 {
+        // Pre-versioned databases get the legacy columns. Each ALTER
+        // tolerates "duplicate column" because some columns may have been
+        // added by even older builds; other errors are reported.
+        for stmt in [
+            "ALTER TABLE clips ADD COLUMN ocr_text TEXT",
+            "ALTER TABLE clips ADD COLUMN ocr_lines TEXT",
+            "ALTER TABLE clips ADD COLUMN is_pinned BOOLEAN DEFAULT 0",
+            "ALTER TABLE clips ADD COLUMN source_app TEXT",
+            "ALTER TABLE clips ADD COLUMN tags TEXT",
+        ] {
+            if let Err(e) = conn.execute(stmt, []) {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column") {
+                    eprintln!("[DB] legacy migration warning: {}", msg);
+                }
+            }
+        }
+    }
+
     if current_version < 1 {
-        // v1: Rich-text (HTML) preservation
-        let _ = conn.execute("ALTER TABLE clips ADD COLUMN content_html TEXT", []);
+        // v1: Rich-text (HTML) preservation column
+        if let Err(e) = conn.execute("ALTER TABLE clips ADD COLUMN content_html TEXT", []) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                return Err(e.into());
+            }
+        }
         conn.execute("PRAGMA user_version = 1", [])?;
+    }
+
+    if current_version < 2 {
+        // v2: Clean stale `content_html` values that older builds stored
+        // when `parse_cf_html_fragment` failed and we wrongly fell back
+        // to the entire CF_HTML blob (header included). Re-wrapping such
+        // blobs on copy produces nested `Version:0.x` headers that paste
+        // targets reject. Detect by the leading metadata signature and
+        // null them out — the clip stays usable as plain text.
+        let cleaned = conn.execute(
+            "UPDATE clips SET content_html = NULL \
+             WHERE content_html LIKE 'Version:0.%' \
+                OR content_html LIKE 'StartHTML:%'",
+            [],
+        )?;
+        if cleaned > 0 {
+            eprintln!("[DB] v2 migration: cleaned {} stale CF_HTML rows", cleaned);
+        }
+        conn.execute("PRAGMA user_version = 2", [])?;
     }
 
     // Indexes — optimized for actual query patterns

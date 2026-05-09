@@ -1,0 +1,5 @@
+# Lint thresholds chosen to flag real issues without flooding noise.
+# Bumped slightly above defaults because Tauri command signatures
+# legitimately have many parameters (handle + state + multiple args).
+too-many-arguments-threshold = 8
+type-complexity-threshold = 250

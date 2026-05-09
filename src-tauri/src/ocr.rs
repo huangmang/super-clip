@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use ort::{inputs, value::Value, session::Session};
-use ndarray;
 use image::{DynamicImage, GenericImageView, imageops::FilterType};
 
 #[cfg(target_os = "windows")]
@@ -300,8 +299,10 @@ impl LocalOcrEngine {
             }
         }
         
-        // Merge horizontally close rects
-        rects.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap()); // Sort by Y
+        // Merge horizontally close rects.
+        // partial_cmp can return None for NaN, which would panic via unwrap;
+        // treat NaN as equal so sorting stays deterministic on degenerate input.
+        rects.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal));
         // (Simplified merging omitted for brevity, but this provides the core boxes)
 
         Ok(rects)
@@ -397,11 +398,19 @@ impl LocalOcrEngine {
     }
 }
 
+/// OCR a clipboard image using the cached local RapidOCR engine.
+///
+/// **Concurrency:** the entire engine is wrapped in a single `Mutex`, so
+/// recognitions execute serially. ONNX `Session` is `!Sync` and reusing
+/// it concurrently is undefined behaviour, so this serialization is
+/// deliberate. Each call typically takes ~50-300ms after the model is
+/// warm; back-to-back hovers will queue rather than parallelise.
 pub fn recognize_text_local(app_handle: &tauri::AppHandle, image_path: &str) -> Result<OcrResult, String> {
     let cell = OCR_ENGINE.get_or_init(|| StdMutex::new(None));
     let mut guard = cell.lock().map_err(|e| format!("OCR engine lock poisoned: {}", e))?;
 
-    // Initialize on first use
+    // Lazy-init on first use, with fallback to the Windows.Media.Ocr engine
+    // if RapidOCR fails (missing model files, ort runtime not loaded, etc.).
     if guard.is_none() {
         match LocalOcrEngine::new(app_handle) {
             Ok(engine) => {
@@ -415,7 +424,9 @@ pub fn recognize_text_local(app_handle: &tauri::AppHandle, image_path: &str) -> 
         }
     }
 
-    guard.as_mut().unwrap().recognize(image_path)
+    // Safe: the if-block above guarantees guard is Some on this branch
+    // (init success path) or already returned (init failure path).
+    guard.as_mut().expect("OCR engine present after lazy init").recognize(image_path)
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -1,13 +1,17 @@
 {
     "name": "super-clip",
     "private": true,
-    "version": "0.5.0",
+    "version": "0.6.0",
     "type": "module",
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
         "preview": "vite preview",
-        "tauri": "tauri"
+        "tauri": "tauri",
+        "typecheck": "tsc --noEmit",
+        "lint:rust": "cd src-tauri && cargo clippy --all-targets -- -D warnings",
+        "fmt:rust": "cd src-tauri && cargo fmt",
+        "test:rust": "cd src-tauri && cargo test --bin super-clip clipboard_tests -- --test-threads=1"
     },
     "dependencies": {
         "@tauri-apps/api": "^1.5.3",

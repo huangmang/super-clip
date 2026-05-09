@@ -27,7 +27,12 @@ fn try_read_cf_html() -> Option<String> {
     }
 
     let raw = String::from_utf8_lossy(&bytes).to_string();
-    Some(parse_cf_html_fragment(&raw).unwrap_or(raw))
+    // Only return a clean, parsed fragment. If parse fails (no
+    // StartFragment offset, empty fragment, etc.) return None so the
+    // clip falls back to plain text — never store the raw CF_HTML blob,
+    // which would get re-wrapped by build_cf_html_blob on copy and
+    // produce nested headers that paste targets reject.
+    parse_cf_html_fragment(&raw)
 }
 
 #[cfg(target_os = "windows")]
@@ -57,6 +62,10 @@ fn find_cf_html_offset(raw: &str, key: &str) -> Option<usize> {
 struct ClipboardState {
     last_content: String,
     last_img_hash: String,
+    /// Cheap SHA256 over (head 4KiB + tail 4KiB + total length) used as
+    /// a stage-1 short-circuit before the full image hash. Avoids
+    /// SHA256-ing 30+MB on every 4K screenshot.
+    last_img_quick_hash: String,
     last_img_dims: (usize, usize, usize),
     clipboard: Option<Clipboard>,
 }
@@ -66,6 +75,7 @@ impl ClipboardState {
         Self {
             last_content: String::new(),
             last_img_hash: String::new(),
+            last_img_quick_hash: String::new(),
             last_img_dims: (0, 0, 0),
             clipboard: Clipboard::new().ok(),
         }
@@ -101,31 +111,52 @@ fn check_clipboard(app_handle: &tauri::AppHandle, state: &mut ClipboardState) {
         None => return,
     };
 
-    // 1. Try Image
+    // 1. Try Image — two-stage hash to avoid SHA256-ing 30+MB on every
+    //    4K screenshot. Stage 1: head + tail 4 KiB → catches almost all
+    //    real changes. Stage 2 (only if stage 1 differs): full SHA256
+    //    for the canonical filename, since image dedup on disk relies
+    //    on it.
     if let Ok(img) = cb.get_image() {
         let dims = (img.width, img.height, img.bytes.len());
 
         if dims != state.last_img_dims {
-            let mut hasher = Sha256::new();
-            hasher.update(&img.bytes);
-            let hash = format!("{:x}", hasher.finalize());
+            let head_tail_hash = {
+                let mut hasher = Sha256::new();
+                let head = &img.bytes[..img.bytes.len().min(4096)];
+                let tail_start = img.bytes.len().saturating_sub(4096);
+                hasher.update(head);
+                hasher.update(&img.bytes[tail_start..]);
+                hasher.update(&(img.bytes.len() as u64).to_le_bytes());
+                format!("{:x}", hasher.finalize())
+            };
 
-            if hash != state.last_img_hash {
-                if let Ok(app_dir) = resolve_images_dir(app_handle) {
-                    let img_path = app_dir.join(format!("{}.png", hash));
-                    if let Some(image_buffer) = ImageBuffer::<Rgba<u8>, _>::from_raw(
-                        img.width as u32, img.height as u32, img.bytes.to_vec(),
-                    ) {
-                        if image_buffer.save(&img_path).is_ok() {
-                            let path_str = img_path.to_string_lossy().to_string();
-                            let source = detect::get_active_window_source();
-                            state.last_img_hash = hash;
-                            state.last_img_dims = dims;
-                            handle_new_clip(app_handle, path_str, "image".to_string(), source, None);
+            if head_tail_hash != state.last_img_quick_hash {
+                let mut hasher = Sha256::new();
+                hasher.update(&img.bytes);
+                let hash = format!("{:x}", hasher.finalize());
+
+                if hash != state.last_img_hash {
+                    if let Ok(app_dir) = resolve_images_dir(app_handle) {
+                        let img_path = app_dir.join(format!("{}.png", hash));
+                        if let Some(image_buffer) = ImageBuffer::<Rgba<u8>, _>::from_raw(
+                            img.width as u32, img.height as u32, img.bytes.to_vec(),
+                        ) {
+                            if image_buffer.save(&img_path).is_ok() {
+                                let path_str = img_path.to_string_lossy().to_string();
+                                let source = detect::get_active_window_source();
+                                state.last_img_hash = hash;
+                                state.last_img_quick_hash = head_tail_hash;
+                                state.last_img_dims = dims;
+                                handle_new_clip(app_handle, path_str, "image".to_string(), source, None);
+                            }
                         }
                     }
+                } else {
+                    state.last_img_dims = dims;
+                    state.last_img_quick_hash = head_tail_hash;
                 }
             } else {
+                // Quick hash matched → assume same image, refresh dims.
                 state.last_img_dims = dims;
             }
         }
@@ -352,8 +383,16 @@ fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String,
         .unwrap_or_else(|| "ask".to_string());
 
     if mode == "always" {
-        if database::insert_clip(&conn, content, kind, source, content_html).is_ok() {
-            let _ = app_handle.emit_all("clip:created", ());
+        match database::insert_clip(&conn, content, kind, source, content_html) {
+            Ok(_) => {
+                let _ = app_handle.emit_all("clip:created", ());
+            }
+            Err(e) => {
+                eprintln!("[CLIP] insert failed: {}", e);
+                // Surface to UI so the user knows something is wrong
+                // (DB locked, disk full, schema mismatch, ...).
+                let _ = app_handle.emit_all("clip:error", format!("{}", e));
+            }
         }
     } else {
         drop(conn);
@@ -387,7 +426,7 @@ fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String,
                 use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
                 use windows::Win32::Foundation::POINT;
                 let mut pt = POINT { x: 0, y: 0 };
-                unsafe { GetCursorPos(&mut pt); }
+                unsafe { let _ = GetCursorPos(&mut pt); }
                 let _ = window.set_position(tauri::Position::Physical(
                     tauri::PhysicalPosition { x: pt.x + 20, y: pt.y + 20 },
                 ));

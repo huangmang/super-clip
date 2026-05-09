@@ -8,7 +8,7 @@
     },
     "package": {
         "productName": "super-clip",
-        "version": "0.5.0"
+        "version": "0.6.0"
     },
     "tauri": {
         "allowlist": {
@@ -80,7 +80,13 @@
             "csp": null
         },
         "updater": {
-            "active": false
+            "active": false,
+            "_comment_": "TO ENABLE AUTO-UPDATES (see docs/UPDATES.md): (1) generate a key pair via `npx @tauri-apps/cli signer generate -w ~/.tauri/super-clip.key`, (2) replace pubkey below, (3) flip active=true, (4) on each release, run `tauri build` then upload the .msi/.exe + .sig + a `latest.json` to the GitHub Release matching `endpoints` below. Until those steps are done, leaving active=false is correct — Tauri will neither download nor verify anything.",
+            "endpoints": [
+                "https://github.com/huangmang/super-clip/releases/latest/download/latest.json"
+            ],
+            "dialog": true,
+            "pubkey": "REPLACE_WITH_TAURI_SIGNER_OUTPUT_BEFORE_ACTIVATING"
         },
         "windows": [
                 {

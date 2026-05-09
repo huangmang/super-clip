@@ -46,13 +46,15 @@ interface DashboardProps {
     clips: Clip[];
 }
 
+// `label` is resolved via t() at render time — declaring it here as a key
+// keeps the array stable across language switches.
 const RANGES = [
-    { label: "30分钟", value: "-30 minutes", key: "30m" },
-    { label: "2小时", value: "-2 hours", key: "2h" },
-    { label: "3小时", value: "-3 hours", key: "3h" },
-    { label: "一天", value: "-1 day", key: "1d" },
-    { label: "三天", value: "-3 days", key: "3d" },
-    { label: "一直", value: "all", key: "all" }
+    { i18nKey: "dash.range_30m", value: "-30 minutes", key: "30m" },
+    { i18nKey: "dash.range_2h",  value: "-2 hours",    key: "2h" },
+    { i18nKey: "dash.range_3h",  value: "-3 hours",    key: "3h" },
+    { i18nKey: "dash.range_1d",  value: "-1 day",      key: "1d" },
+    { i18nKey: "dash.range_3d",  value: "-3 days",     key: "3d" },
+    { i18nKey: "dash.range_all", value: "all",         key: "all" },
 ];
 
 const TIME_FILTER_MS: Record<string, number> = {
@@ -150,13 +152,15 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
 
     const currentRangeTotal = Object.values(stats).reduce((a, b) => a + b, 0);
 
+    // Labels are resolved via t() at render time so language switches don't
+    // require remounting Dashboard.
     const typeConfig: Record<string, { label: string, icon: any, color: string, textColor: string, bgColor: string }> = {
-        all: { label: "全部", icon: LayoutDashboard, color: "from-gray-500 to-gray-400", textColor: "text-gray-400", bgColor: "bg-white/5" },
-        text: { label: "文本", icon: Type, color: "from-blue-500 to-cyan-400", textColor: "text-blue-400", bgColor: "bg-blue-500/10" },
-        image: { label: "图片", icon: ImageIcon, color: "from-purple-500 to-pink-500", textColor: "text-purple-400", bgColor: "bg-purple-500/10" },
-        link: { label: "链接", icon: LinkIcon, color: "from-emerald-500 to-teal-400", textColor: "text-emerald-400", bgColor: "bg-emerald-500/10" },
-        code: { label: "代码", icon: CodeIcon, color: "from-orange-500 to-yellow-400", textColor: "text-orange-400", bgColor: "bg-orange-500/10" },
-        file: { label: "文件", icon: FileText, color: "from-indigo-500 to-blue-600", textColor: "text-indigo-400", bgColor: "bg-indigo-500/10" },
+        all:   { label: t('tab.all'),   icon: LayoutDashboard, color: "from-gray-500 to-gray-400",     textColor: "text-gray-400",    bgColor: "bg-white/5" },
+        text:  { label: t('tab.text'),  icon: Type,            color: "from-blue-500 to-cyan-400",     textColor: "text-blue-400",    bgColor: "bg-blue-500/10" },
+        image: { label: t('tab.image'), icon: ImageIcon,       color: "from-purple-500 to-pink-500",   textColor: "text-purple-400",  bgColor: "bg-purple-500/10" },
+        link:  { label: t('tab.link'),  icon: LinkIcon,        color: "from-emerald-500 to-teal-400",  textColor: "text-emerald-400", bgColor: "bg-emerald-500/10" },
+        code:  { label: t('tab.code'),  icon: CodeIcon,        color: "from-orange-500 to-yellow-400", textColor: "text-orange-400",  bgColor: "bg-orange-500/10" },
+        file:  { label: t('tab.file'),  icon: FileText,        color: "from-indigo-500 to-blue-600",   textColor: "text-indigo-400",  bgColor: "bg-indigo-500/10" },
     };
 
     const hasDiscoveries = discoveries.links.length > 0 || discoveries.assets.length > 0 || discoveries.tasks.length > 0;
@@ -221,7 +225,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                 : "bg-[var(--input-bg)] text-gray-500 hover:text-gray-300 border border-[var(--border-color)] hover:border-blue-500/30"
                             }`}
                         >
-                            {range.label}
+                            {t(range.i18nKey)}
                         </button>
                     ))}
                 </div>
@@ -230,7 +234,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
             {loading ? (
                 <div className="flex flex-col items-center justify-center py-24 space-y-4">
                     <div className="w-8 h-8 border-3 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-                    <span className="text-[12px] text-gray-500 uppercase font-bold tracking-widest">计算中...</span>
+                    <span className="text-[12px] text-gray-500 uppercase font-bold tracking-widest">{t('dash.loading')}</span>
                 </div>
             ) : (
                 <>
@@ -239,10 +243,10 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                         <div className="flex items-center justify-between border-b border-white/5 pb-2">
                             <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
                                 <Clock size={14} className="text-blue-400" />
-                                类别分布 ({selectedRange.label})
+                                {t('dash.category_distribution_with_range', { range: t(selectedRange.i18nKey) })}
                             </h3>
-                            <Tooltip text="重置所有筛选">
-                                <button onClick={() => onFilter("", "time_reset")} className="text-[12px] font-bold text-red-400/60 hover:text-red-400 transition-colors uppercase">重置</button>
+                            <Tooltip text={t('dash.reset_tooltip')}>
+                                <button onClick={() => onFilter("", "time_reset")} className="text-[12px] font-bold text-red-400/60 hover:text-red-400 transition-colors uppercase">{t('dash.reset')}</button>
                             </Tooltip>
                         </div>
 
@@ -492,10 +496,10 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                     <div className="p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 space-y-2">
                         <div className="flex items-center gap-2 text-[12px] font-bold text-indigo-400 uppercase tracking-widest">
                             <Search size={12} />
-                            筛选说明
+                            {t('dash.filter_tip_title')}
                         </div>
                         <p className="text-[12px] text-gray-400 leading-relaxed">
-                            点击上方模块将同时应用 <span className="text-white font-bold">{selectedRange.label}</span> 与 <span className="text-white font-bold">分类类型</span> 过滤，主列表将即时更新。
+                            {t('dash.filter_tip_body', { range: t(selectedRange.i18nKey) })}
                         </p>
                     </div>
 
@@ -504,7 +508,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                         <div className="space-y-3 pt-2">
                             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
                                 <Sparkles size={14} className="text-yellow-400" />
-                                <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider">智能发现</h3>
+                                <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider">{t('dash.discovery')}</h3>
                             </div>
                             <div className="space-y-2">
                                 {discoveries.tasks.concat(discoveries.links, discoveries.assets).slice(0, 3).map((item, i) => (

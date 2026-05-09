@@ -79,12 +79,57 @@ pub fn update_clip_tags(db: tauri::State<DbState>, id: i64, tags: String) -> Res
     database::update_clip_tags(&conn, id, tags).map_err(|e| e.to_string())
 }
 
+// ── Path validation helpers ──
+//
+// `perform_ocr` and `open_path` accept path strings from the frontend. A
+// compromised frontend (e.g. via XSS through a DOMPurify bypass) could
+// otherwise pass `shell:Startup`, UNC paths, or protocol URIs. We canonicalize
+// and require the file to exist on disk; OCR additionally requires a
+// recognised image extension.
+
+fn validate_safe_path(path: &str) -> Result<std::path::PathBuf, String> {
+    if path.starts_with("shell:")
+        || path.starts_with("\\\\?\\")
+        || path.starts_with("\\\\.\\")
+        || path.contains("://")
+    {
+        return Err("Unsupported path scheme".into());
+    }
+    let p = std::path::Path::new(path);
+    if !p.is_absolute() {
+        return Err("Path must be absolute".into());
+    }
+    let canon = p
+        .canonicalize()
+        .map_err(|e| format!("Path resolve failed: {}", e))?;
+    Ok(canon)
+}
+
+fn validate_image_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let canon = validate_safe_path(path)?;
+    if !canon.is_file() {
+        return Err("Not a regular file".into());
+    }
+    let ext = canon
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "bmp" | "gif" | "webp" | "tiff" | "tif" => Ok(canon),
+        _ => Err(format!("Unsupported image extension: {}", ext)),
+    }
+}
+
 // ── OCR ──
 
 #[tauri::command]
 pub fn perform_ocr(app_handle: tauri::AppHandle, db: tauri::State<DbState>, id: i64, path: String) -> Result<ocr::OcrResult, String> {
     #[cfg(target_os = "windows")]
     {
+        // Reject obviously malicious paths before touching the disk.
+        let safe_path = validate_image_path(&path)?;
+
         let conn = db.0.lock().unwrap();
         // Check DB cache
         if let Ok(Some(clip)) = database::get_clip_by_id(&conn, id) {
@@ -98,7 +143,7 @@ pub fn perform_ocr(app_handle: tauri::AppHandle, db: tauri::State<DbState>, id: 
         }
         drop(conn);
 
-        let result = ocr::recognize_text_local(&app_handle, &path)?;
+        let result = ocr::recognize_text_local(&app_handle, &safe_path.to_string_lossy())?;
 
         let conn = db.0.lock().unwrap();
         let lines_json = serde_json::to_string(&result.lines).map_err(|e| e.to_string())?;
@@ -195,32 +240,63 @@ fn copy_file(content: &str) -> Result<(), String> {
 fn copy_text(content: &str, html: Option<&str>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use clipboard_win::{set_clipboard, formats, Setter, Clipboard as WinClipboard, register_format};
-        use clipboard_win::formats::RawData;
+        use clipboard_win::{set_clipboard, formats, Clipboard as WinClipboard, register_format};
 
-        // Simple case: no HTML → use single-format API
-        let Some(html_body) = html else {
+        // Sanitize incoming HTML. Skip the dual-format path when the body is
+        // empty/whitespace, or when it looks like a stale raw CF_HTML blob
+        // (legacy bug where parse failure stored the entire CF_HTML payload —
+        // header included — into content_html). Re-wrapping such a blob would
+        // produce nested `Version:0.9` headers that paste targets reject.
+        let html_body = html.map(str::trim).filter(|s| {
+            !s.is_empty() && !s.starts_with("Version:0.")
+        });
+
+        // Plain-text path: proven set_clipboard helper (single-format).
+        let Some(html_body) = html_body else {
             return set_clipboard(formats::Unicode, content)
                 .map_err(|e| format!("Set text failed: {}", e));
         };
 
-        // Dual-format: write CF_UNICODETEXT + CF_HTML atomically
-        let _clip = WinClipboard::new_attempts(5)
+        // Dual-format path. CRITICAL: clipboard_win's high-level Setter API
+        // (`formats::Unicode::write_clipboard`, `RawData::write_clipboard`)
+        // routes through `raw::set` and `raw::set_string`, BOTH of which call
+        // `empty()` internally before SetClipboardData. Stacking them in the
+        // same Open scope therefore wipes the previously-written format —
+        // CF_UNICODETEXT vanishes the moment we write CF_HTML, leaving
+        // Notepad with nothing to paste. We bypass that by going through
+        // `raw::set_without_clear`, which writes via SetClipboardData
+        // without an EmptyClipboard call in between.
+        let cf_html_blob = build_cf_html_blob(html_body);
+        eprintln!(
+            "[COPY] dual-format: text_len={} html_len={}",
+            content.len(),
+            cf_html_blob.len()
+        );
+
+        let _clip = WinClipboard::new_attempts(10)
             .map_err(|e| format!("WinClipboard open failed: {:?}", e))?;
+        // Take ownership exactly once. Subsequent writes must NOT empty again.
         clipboard_win::empty().map_err(|e| format!("empty failed: {:?}", e))?;
 
-        // Write Unicode text (plain fallback for apps that don't accept HTML)
-        formats::Unicode
-            .write_clipboard(&content)
-            .map_err(|e| format!("Write Unicode failed: {:?}", e))?;
+        // 1. CF_UNICODETEXT (plain fallback for Notepad / apps that don't accept HTML).
+        //    UTF-16 LE with trailing NUL.
+        let utf16: Vec<u16> = content.encode_utf16().chain(std::iter::once(0)).collect();
+        let utf16_bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(utf16.as_ptr() as *const u8, utf16.len() * 2)
+        };
+        clipboard_win::raw::set_without_clear(formats::CF_UNICODETEXT, utf16_bytes)
+            .map_err(|e| format!("Write CF_UNICODETEXT failed: {:?}", e))?;
 
-        // Write CF_HTML with the required metadata header
-        let fmt_id = register_format("HTML Format").ok_or_else(|| "register CF_HTML failed".to_string())?;
-        let cf_html_blob = build_cf_html_blob(html_body);
-        RawData(fmt_id.get())
-            .write_clipboard(&cf_html_blob.as_bytes())
+        // 2. CF_HTML (registered "HTML Format"). Append a trailing NUL byte —
+        //    several Office/Edge code paths require a NUL-terminated buffer.
+        let fmt_id = register_format("HTML Format")
+            .ok_or_else(|| "register CF_HTML failed".to_string())?;
+        let mut html_buf = cf_html_blob.into_bytes();
+        html_buf.push(0);
+        clipboard_win::raw::set_without_clear(fmt_id.get(), &html_buf)
             .map_err(|e| format!("Write CF_HTML failed: {:?}", e))?;
 
+        // _clip drops here → CloseClipboard commits both formats.
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
@@ -260,6 +336,104 @@ fn build_cf_html_blob(html_fragment: &str) -> String {
     s.push_str(html_fragment);
     s.push_str(HTML_CLOSE);
     s
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod clipboard_tests {
+    use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // clipboard_win in 4.5 sometimes returns 1418 on a second GetClipboardData
+    // inside the same Open scope (looks like an internal interaction with
+    // RawMem::from_borrowed). Guarantee a fresh Open scope per read instead.
+    fn read_unicode_text() -> Result<String, String> {
+        let _clip = clipboard_win::Clipboard::new_attempts(10)
+            .map_err(|e| format!("open: {:?}", e))?;
+        let mut buf = Vec::<u8>::new();
+        clipboard_win::raw::get_string(&mut buf).map_err(|e| format!("get_string: {:?}", e))?;
+        String::from_utf8(buf).map_err(|e| format!("utf8: {}", e))
+    }
+
+    fn read_cf_html() -> Result<String, String> {
+        let _clip = clipboard_win::Clipboard::new_attempts(10)
+            .map_err(|e| format!("open: {:?}", e))?;
+        let html_fmt = clipboard_win::register_format("HTML Format")
+            .ok_or_else(|| "register".to_string())?;
+        let mut buf = Vec::<u8>::new();
+        clipboard_win::raw::get_vec(html_fmt.get(), &mut buf)
+            .map_err(|e| format!("get_vec: {:?}", e))?;
+        Ok(String::from_utf8_lossy(&buf).to_string())
+    }
+
+    /// Regression for the actual bug: the user's first single-click used to
+    /// produce an empty paste (Notepad showed nothing) because the second
+    /// SetClipboardData via clipboard_win's Setter trait re-empties the
+    /// clipboard, wiping CF_UNICODETEXT that was just written. This test
+    /// asserts both formats survive after one copy_text call.
+    #[test]
+    fn rich_text_copy_keeps_both_formats() {
+        let content = "Hello world";
+        let html = "<p><b>Hello</b> world</p>";
+
+        copy_text(content, Some(html)).expect("copy_text returned Err");
+        sleep(Duration::from_millis(50));
+
+        let got_text = read_unicode_text().expect("CF_UNICODETEXT MISSING — regression!");
+        assert_eq!(got_text.trim_end_matches('\u{0}'), content);
+
+        let got_html = read_cf_html().expect("CF_HTML missing");
+        assert!(got_html.contains("<b>Hello</b>"), "fragment missing: {}", got_html);
+        assert!(got_html.contains("StartFragment:"), "metadata missing");
+    }
+
+    /// Hammer the same code path repeatedly — the original "need to
+    /// double-click" symptom suggests non-deterministic state.
+    /// Each iteration must independently leave both formats intact.
+    #[test]
+    fn rich_text_copy_repeated_clicks() {
+        for i in 0..5 {
+            let content = format!("iteration {}", i);
+            let html = format!("<p>iteration <b>{}</b></p>", i);
+            copy_text(&content, Some(&html))
+                .unwrap_or_else(|e| panic!("iteration {}: {}", i, e));
+            sleep(Duration::from_millis(50));
+
+            let got = read_unicode_text()
+                .unwrap_or_else(|e| panic!("iteration {} unicode read: {}", i, e));
+            assert_eq!(got.trim_end_matches('\u{0}'), content, "iter {}", i);
+
+            let got_html = read_cf_html()
+                .unwrap_or_else(|e| panic!("iteration {} html read: {}", i, e));
+            assert!(got_html.contains(&format!("<b>{}</b>", i)), "iter {} html: {}", i, got_html);
+
+            sleep(Duration::from_millis(30));
+        }
+    }
+
+    /// Stale raw CF_HTML blob (legacy DB rows from before the monitor fix)
+    /// must NOT be re-wrapped. Sanitizer should detect the `Version:0.`
+    /// prefix and downgrade to plain Unicode.
+    #[test]
+    fn stale_raw_blob_falls_back_to_plain_text() {
+        let content = "fallback text";
+        let stale_blob = "Version:0.9\r\nStartHTML:00000105\r\n<html>...</html>".to_string();
+        copy_text(content, Some(&stale_blob)).expect("copy_text failed");
+        sleep(Duration::from_millis(50));
+
+        let got = read_unicode_text().expect("CF_UNICODETEXT missing");
+        assert_eq!(got.trim_end_matches('\u{0}'), content);
+
+        // CF_HTML must NOT carry our garbage forward.
+        match read_cf_html() {
+            Err(_) => {} // ideal: format isn't set at all
+            Ok(s) => assert!(
+                !s.contains("StartHTML:00000105"),
+                "stale blob leaked into CF_HTML: {}",
+                s
+            ),
+        }
+    }
 }
 
 // ── Keyboard Simulation ──
@@ -485,16 +659,21 @@ pub fn search_files(query: String) -> Result<Vec<everything_search::FileResult>,
 
 #[tauri::command]
 pub fn open_path(path: String) -> Result<(), String> {
+    // Block protocol URIs, UNC, and shell: pseudo-paths. The user did
+    // explicitly click to open, but a compromised frontend could otherwise
+    // hand us `shell:Startup` etc.
+    let safe = validate_safe_path(&path)?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
-            .arg(path)
+            .arg(safe.as_os_str())
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = safe;
         Err("Not supported".to_string())
     }
 }
@@ -503,22 +682,41 @@ pub fn open_path(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn user_prompt_decision(app_handle: tauri::AppHandle, db: tauri::State<DbState>, decision: String, state: tauri::State<PendingClipState>) -> Result<(), String> {
-    if decision == "always" {
-        let conn = db.0.lock().unwrap();
-        let _ = database::set_setting(&conn, "always_intercept_clip", "always");
-    }
-
-    if decision == "always" || decision == "once" {
+    // Always extract the pending clip first, releasing the PendingClipState
+    // lock BEFORE acquiring the DB lock. The previous code locked state then
+    // db together, which combined with handle_new_clip's db-then-state
+    // ordering elsewhere created an ABBA deadlock window.
+    let pending = {
         let mut data = state.0.lock().unwrap();
-        if let Some((content, kind, source, html)) = data.take() {
+        data.take()
+    };
+
+    match decision.as_str() {
+        "always" => {
+            // Persist preference, then insert (still requires db lock — but
+            // state lock is no longer held).
             let conn = db.0.lock().unwrap();
-            if database::insert_clip(&conn, content, kind, source, html).is_ok() {
-                let _ = app_handle.emit_all("clip:created", ());
+            let _ = database::set_setting(&conn, "always_intercept_clip", "always");
+            if let Some((content, kind, source, html)) = pending {
+                if database::insert_clip(&conn, content, kind, source, html).is_ok() {
+                    drop(conn);
+                    let _ = app_handle.emit_all("clip:created", ());
+                }
             }
         }
-    } else if decision == "ignore" {
-        let mut data = state.0.lock().unwrap();
-        *data = None;
+        "once" => {
+            if let Some((content, kind, source, html)) = pending {
+                let conn = db.0.lock().unwrap();
+                if database::insert_clip(&conn, content, kind, source, html).is_ok() {
+                    drop(conn);
+                    let _ = app_handle.emit_all("clip:created", ());
+                }
+            }
+        }
+        "ignore" => {
+            // Already cleared by the take() above.
+        }
+        _ => {}
     }
 
     // Close all prompt windows

@@ -1,127 +1,34 @@
 # Super Clip
 
-**Windows 上更懂你的剪贴板管理器。** 文本、富文本、图片、文件一网打尽;内置离线 AI OCR 让截图里的字变成可搜的文本;和 Everything 深度联动,剪贴板历史和本机全盘搜索在同一个窗口里解决。完全本地运行 —— 不联网、不登录、不上报。
+> **比 Win+V 强 10 倍的本地剪贴板管家。** 富文本不丢格式、图片能搜文字、本机文件一起搜——离线、零联网、零账号。
 
-基于 Rust + Tauri + React,事件驱动监听剪贴板,空转 CPU ≈ 0%。
-
----
-
-## 为什么选 Super Clip
-
-对标 Ditto / Paste / ClipboardFusion / Copy'Em 的核心差异:
-
-| | Super Clip | 大多数剪贴板管理器 |
-|---|---|---|
-| 富文本格式保留 | 完整捕获 Windows CF_HTML,粘回 Word/邮件时字体、颜色、链接、表格都在 | 只保留纯文本,格式全丢 |
-| 图片 OCR | 内置离线 ONNX 中英文模型,图片里的字可搜、可框选、可单句复制 | 不支持,或需要联网 |
-| 全局搜索 | 剪贴板历史 + Everything 本机文件 统一搜索(Ctrl+M) | 只能搜自己的历史 |
-| 备份迁移 | 一键 JSON 导出/导入,图片 base64 内嵌,换机器无损恢复 | 数据锁死在本地,迁移痛苦 |
-| 隐私 | 纯本地,敏感应用(KeePass/1Password 等)自动不记录 | 多数上云同步 |
-| 性能 | 事件驱动监听,SQLite WAL + mmap,十万条仍流畅 | 轮询扫描,条数多了会卡 |
+```
+┌─────────────────────┬──────────────────┬────────────────────┐
+│  Word/飞书复制过来  │  截图复制过来    │  Ctrl+M 弹窗一搜   │
+│  ↓                  │  ↓               │  ↓                 │
+│  粘到任何地方       │  30 秒后整张图   │  剪贴板历史 +      │
+│  字体颜色表格全在   │  里的字变成可    │  本机 D 盘文件     │
+│                     │  搜索的文本      │  一起出来          │
+└─────────────────────┴──────────────────┴────────────────────┘
+        别家：纯文本           别家：不支持        别家：只有自己的历史
+```
 
 ---
 
-## 核心功能
+## 三件事，决定你装不装
 
-### 智能捕获与存储
+### 1. 复制 Word 公文 → 粘贴到飞书，**加粗 / 颜色 / 链接 / 表格 0 损失**
+Windows `Ctrl+V` 复制了带格式的内容，Win+V 历史里再粘出来就只剩纯文本——颜色没了、加粗没了、表格散架。Super Clip 完整捕获 Windows `CF_HTML`，粘到 Word / 飞书 / 邮件 / Notion 时格式原样回来；粘到记事本自动降级为纯文本，不会出现一堆 `<p style="…">` 垃圾。
 
-- **四种内容全支持** — 纯文本、链接、代码、图片、文件路径,自动分类并带颜色标签
-- **富文本 (HTML) 保留** — 从 Chrome / Word / 飞书 / Notion / Gmail / Slack 复制的带格式内容,粘到支持富文本的目标里格式完整保留;粘到记事本自动降级纯文本
-- **事件驱动监听** — Win32 `WM_CLIPBOARDUPDATE` 消息泵,空转零开销;非 Windows 平台回退到 300ms 轮询
-- **智能去重** — 文本按内容精确去重,图片按像素 SHA-256 去重
-- **敏感应用黑名单** — 从 KeePass / 1Password / Bitwarden / LastPass 等密码管理器复制的内容永不入库,支持自定义进程名
+### 2. 截图丢进剪贴板 → **30 秒后图里的字可搜可框选**
+RapidOCR 中英双语 ONNX 模型直接跑在你的 CPU 上，不联网。屏幕截图、扫描件、表情包文字、产品截图——任何图片复制进来，鼠标悬停就触发识别，可以**框选其中一段文字单独复制**，也可以一键复制全部识别结果。模型常驻内存，第二次起耗时几乎为零。
 
-### 离线 OCR(本地 AI)
-
-- **ONNX Runtime + RapidOCR** 中英文检测 + 识别双模型,全在你的 CPU 上跑
-- **飞书式交互** — 鼠标悬停任一图片 clip 即触发识别,识别后可框选文本片段、整句复制或复制全文
-- **大图预缩放** — 超过 1280px 宽的图片自动按比例缩放后再推理,节省内存和时间
-- **模型常驻内存** — 首次加载后一直留在进程内,每次 OCR 从 ~500ms 降到 ~0ms
-
-### 极简搜索模式(Ctrl+M)
-
-一个 Spotlight 风格的小窗口,按类别过滤:
-- **剪贴板历史** — 模糊匹配(nucleo-matcher)你的 content + OCR 文本 + 来源应用 + 标签
-- **本机文件** — 通过 Voidtools Everything SDK,瞬时搜索整块硬盘
-- **分类 Tab** — 全部 / 剪贴板 / 本地文件 / 文档 / 图片 / 链接 / 代码 / 应用 / 文件夹 互相切换
-
-### 主界面
-
-- **分页 + 无限滚动** — 每页 100 条,`IntersectionObserver` 懒加载,不卡
-- **时间桶导航** — 浮动侧边条按语义分组:1 小时内 / 今日上午 / 今日下午 / 今晚 / 昨天 / 最近 7 天 / 更早
-- **三层过滤叠加** — 标签类型(文本/图片/链接/代码/文件/收藏) + 关键词搜索 + 时间范围,实时联动
-- **多选批量操作** — 拖拽框选多条 → 合并复制 / 批量删除
-- **实体智能提取** — 选中带邮箱/URL/电话/IP/颜色值/JSON 的 clip 自动识别并给出对应操作按钮(发邮件、打开链接、格式化 JSON、显示色卡等)
-
-### 代码片段(Snippets)
-
-- 命名 + 可选触发词(如 `;;email`),在极简模式搜索时直接出现在结果里
-- 常用 email 签名、回复模板、命令片段永不丢失
-- 设置面板内完整 CRUD
-
-### 悬浮图片窗口
-
-- 任意图片一键固定为 **置顶、透明、可缩放** 的悬浮窗
-- 窗口上叠一层 OCR 文字层,可直接框选复制(用于一边查图一边打字)
-
-### 内置仪表盘
-
-本地 `Intl.Segmenter` 分词,零 LLM 依赖:
-
-- **分类分布** — 堆叠条 + 圆环图,一眼看文本/图片/链接比例
-- **来源应用 Top15** — 条形图告诉你剪贴板最常从哪些应用来
-- **高频词气泡图** — 6 色渐变,大小反映频次,点击即把该词当筛选器应用回主列表
-- **时间范围切换** — 30 分钟 / 2 小时 / 3 小时 / 1 天 / 3 天 / 全部
-
-### 数据管理 — 敢于 all-in
-
-- **一键导出 JSON** — 全量历史 + 代码片段打包,图片以 base64 内嵌,文件可跨机器还原
-- **合并导入策略** — 相同内容自动跳过,绝不覆盖现有历史;错误条目单独计数
-- **自动清理** — 保留策略(1 / 7 / 30 / 90 天 / 永久)可选,已置顶和已收藏的条目永不被清理
-- **DB schema 版本化迁移** — 新字段加得安全,老数据平滑升级
-
-### 键盘驱动
-
-| 快捷键 | 动作 |
-|---|---|
-| `Ctrl+Space` (可改) | 显示/隐藏主窗口 |
-| `Ctrl+M` (可改) | 极简搜索模式 |
-| 双击 `Ctrl` | 快速呼出/隐藏(可关闭) |
-| `Enter` | 复制当前条目并自动粘贴到上一个窗口 |
-| `↑/↓` `Tab` | 列表 / Tab 切换 |
-| `ESC` | 分层返回(预览→设置→弹窗→多选→筛选→搜索→隐藏) |
-| `?` | 完整快捷键面板 |
-
-### 界面
-
-- Obsidian 风深色主题,石墨灰 + 电光蓝配色;支持明暗一键切换
-- 支持中文 / 英文一键切换,所有 245+ 文案完整翻译
-- 毛玻璃层叠 + 呼吸 Logo + 渐变动画
+### 3. `Ctrl+M` → **剪贴板历史 + 整块硬盘文件 在同一个窗口里搜**
+Spotlight 风格小窗，模糊匹配你的剪贴板内容、OCR 结果、来源应用名——同时通过 [Everything](https://www.voidtools.com/) SDK 桥接，整盘文件秒级返回。`Tab` 切类别，`↑↓` 选，`Enter` 复制并粘贴到上一个窗口（uTools 流）。
 
 ---
 
-## 隐私
-
-Super Clip 是严格的 **本地优先** 软件:
-
-- 剪贴板数据**永不离开**你的机器
-- OCR 在本地 CPU 跑,无云端推理
-- 没有账号、没有遥测、没有分析
-- 敏感应用可配置黑名单,从源头阻断入库
-- 代码 MIT 开源,欢迎审计
-
----
-
-## 安装 / 构建
-
-### 前置依赖
-
-- [Node.js](https://nodejs.org/) v18+
-- [Rust](https://rustup.rs/) 最新稳定版
-- Visual Studio C++ Build Tools(Windows 编译 Rust 需要)
-- [Everything](https://www.voidtools.com/) 运行中(本机文件搜索需要,可选)
-
-### 从源码运行
+## 30 秒上手
 
 ```bash
 git clone https://github.com/huangmang/super-clip.git
@@ -130,22 +37,172 @@ npm install
 npm run tauri dev
 ```
 
-### 构建安装包
+启动后：
+
+| 按键 | 作用 |
+|---|---|
+| `Ctrl+Space` | 显示 / 隐藏主窗口（可改） |
+| `Ctrl+M` | 极简搜索弹窗 |
+| 双击卡片 | 复制到剪贴板 |
+| `Enter` | 复制并自动粘贴到上一个窗口 |
+| `?` | 完整快捷键面板 |
+
+---
+
+## 它和别家不一样在哪
+
+对标 Ditto / Paste / ClipboardFusion / Copy'Em / Win+V：
+
+| | Super Clip | 大多数同类 |
+|---|---|---|
+| **富文本格式** | CF_HTML 完整双写，粘回 Word / 飞书 / Notion 颜色表格全保留 | 只存纯文本 |
+| **图片 OCR** | 离线 ONNX 中英文模型，可框选可单句复制 | 不支持，或要联网订阅 |
+| **本机搜索** | 历史 + Everything 全盘，统一窗口 | 只搜自己的历史 |
+| **备份迁移** | 一键 JSON，图片 base64 内嵌，跨机器无损 | 数据锁死本地 |
+| **隐私** | 全本地，密码管理器自动黑名单 | 多数走云同步 |
+| **CPU 占用** | 事件驱动 `WM_CLIPBOARDUPDATE`，空转 ≈ 0% | 多数定时轮询 |
+| **开源** | MIT，敢审 | 多数闭源 |
+
+---
+
+## 适合谁
+
+- **写文档 / 做 PPT / 跨平台搬运图文的人** —— Word ↔ 飞书 ↔ 微信 ↔ 邮件，格式不再丢
+- **设计师 / 截图剁手党** —— 一天 50 张截图，OCR 让每张都可搜
+- **开发者 / 运维** —— 命令、配置片段、错误日志混着用，模糊搜一下都在
+- **用 Everything 的重度文件用户** —— 现在剪贴板和本机文件搜索是同一个 Ctrl+M
+- **隐私洁癖者** —— 没账号、没遥测、剪贴板永不出本机
+
+---
+
+## 完整功能
+
+<details>
+<summary><b>智能捕获 & 存储</b></summary>
+
+- 文本 / 链接 / 代码 / 图片 / 文件路径 自动分类，颜色标签
+- **CF_HTML 富文本保留**：捕获 + 写回都按 Microsoft 规范双格式（`CF_UNICODETEXT` + `HTML Format`）原子写入
+- **事件驱动监听**：`WM_CLIPBOARDUPDATE` 消息泵，空转零 CPU
+- 文本按内容精确去重，图片用两阶段 hash（头尾 4KiB → 全量 SHA256）避免 4K 截图卡顿
+- 敏感应用黑名单：KeePass / 1Password / Bitwarden / LastPass 复制的内容永不入库
+
+</details>
+
+<details>
+<summary><b>本地离线 OCR</b></summary>
+
+- ONNX Runtime + RapidOCR 中英双模型（detection + recognition）
+- 鼠标悬停图片即触发，识别后**可框选片段单独复制**
+- 大图（>1280px）自动按比例预缩放，节省内存
+- 模型首次加载后常驻进程，二次推理几乎为零
+
+</details>
+
+<details>
+<summary><b>极简搜索 (Ctrl+M)</b></summary>
+
+- 模糊匹配（nucleo-matcher）：内容 + OCR 文本 + 来源应用 + 标签
+- 同窗口接 Everything SDK 搜整块硬盘
+- 类别 Tab：全部 / 历史 / 文件 / 文档 / 图片 / 链接 / 代码 / 程序 / 文件夹
+
+</details>
+
+<details>
+<summary><b>主界面</b></summary>
+
+- 分页 + 无限滚动（IntersectionObserver），每页 100 条
+- 时间桶导航：1 小时内 / 今日上午 / 今日下午 / 今晚 / 昨天 / 最近 7 天 / 更早
+- 三层过滤：类型 + 关键词 + 时间，实时联动
+- 多选批量：拖拽框选 → 合并复制 / 批量删除（自建确认弹窗）
+- 实体智能提取：选中带 email / URL / 电话 / IP / 颜色值 / JSON 的 clip 自动给操作按钮
+
+</details>
+
+<details>
+<summary><b>代码片段 (Snippets)</b></summary>
+
+- 命名 + 触发词（如 `;;email`），极简模式搜索时直接出现在结果里
+- 设置面板内完整 CRUD
+
+</details>
+
+<details>
+<summary><b>悬浮图片窗口</b></summary>
+
+- 任意图片一键固定为 **置顶 / 透明 / 可缩放** 的小窗
+- 上叠 OCR 文字层，框选即复制（一边查图一边打字的场景）
+
+</details>
+
+<details>
+<summary><b>仪表盘</b></summary>
+
+- 本地 `Intl.Segmenter` 分词，零 LLM 依赖
+- 分类堆叠条 + 圆环图 / 来源应用 Top15 / 高频词气泡 / 时间范围切换
+
+</details>
+
+<details>
+<summary><b>数据管理</b></summary>
+
+- 一键 JSON 导出/导入：全量历史 + 代码片段，图片 base64 内嵌，跨机器无损
+- 合并导入策略：相同内容跳过，不覆盖现有历史
+- 自动清理保留策略：1 / 7 / 30 / 90 天 / 永久；置顶和收藏的条目永不被清
+- DB schema 版本化迁移：v0 → v1 加 `content_html` 列等
+
+</details>
+
+<details>
+<summary><b>键盘流</b></summary>
+
+| 快捷键 | 动作 |
+|---|---|
+| `Ctrl+Space` (可改) | 显示 / 隐藏主窗口 |
+| `Ctrl+M` (可改) | 极简搜索 |
+| 双击 `Ctrl` | 快速呼出（可关） |
+| 双击卡片 / `Enter` | 复制（Enter 还会自动粘贴） |
+| 单击卡片 | 仅选中（避免误触复制） |
+| `↑/↓` `Tab` | 列表 / Tab 切换 |
+| `ESC` | 分层返回 |
+| `?` | 完整快捷键面板 |
+
+</details>
+
+---
+
+## 隐私
+
+- 数据**永不离开**你的机器
+- OCR 在本地 CPU 跑，无云端
+- 没账号、没遥测、没分析
+- 敏感应用可配黑名单，源头阻断入库
+- MIT 开源，欢迎审计
+
+---
+
+## 构建发行包
 
 ```bash
 npm run tauri build
 ```
 
-产物在 `src-tauri/target/release/bundle/nsis/` 下,包括 `.exe` 安装包和 `.msi`。
+产物在 `src-tauri/target/release/bundle/nsis/` 下，含 `.exe` 安装包和 `.msi`。
+
+### 前置依赖
+
+- [Node.js](https://nodejs.org/) v18+
+- [Rust](https://rustup.rs/) stable
+- Visual Studio C++ Build Tools（Windows 编译 Rust 必需）
+- [Everything](https://www.voidtools.com/) 后台运行（仅本机文件搜索功能需要）
 
 ---
 
 ## 技术栈
 
 - **前端** — React 18 + TypeScript + Vite + TailwindCSS + DOMPurify
-- **后端** — Rust + Tauri 1.5,rusqlite(bundled SQLite)持久化,WAL + mmap 加速
-- **AI** — ONNX Runtime (`ort` crate) 本地推理,RapidOCR 中英双语模型
-- **Windows 深度整合** — 低级键盘钩子、`WM_CLIPBOARDUPDATE` 事件、`CF_HTML` / `CF_UNICODETEXT` 双写、Everything SDK 桥接
+- **后端** — Rust + Tauri 1.5；rusqlite（bundled SQLite）+ WAL + mmap
+- **AI** — ONNX Runtime（`ort` crate），RapidOCR 中英双语
+- **Windows 深度整合** — 低级键盘钩子、`WM_CLIPBOARDUPDATE` 事件、`CF_HTML` 双写、Everything SDK 桥接
 
 ---
 
@@ -155,4 +212,4 @@ npm run tauri build
 
 ## 许可
 
-MIT License
+MIT

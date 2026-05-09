@@ -2,6 +2,64 @@
 
 所有对 Super Clip 的重大功能改进和 Bug 修复都会记录在此。
 
+## [0.6.0] - 2026-05-08
+
+### Bug 修复
+
+- **富文本复制"粘贴为空"** — 根因：`clipboard-win` 4.5 的高层 `Setter` API 内部每次 `SetClipboardData` 前都调 `EmptyClipboard()`，连写 CF_UNICODETEXT + CF_HTML 时后者的 empty 把前者抹掉。Notepad 读不到 CF_UNICODETEXT → 粘贴为空。**修复**：改用 `raw::set_without_clear` 在单个 OpenClipboard 会话内原子写入两个格式。回归测试全绿。
+- **try_read_cf_html 解析失败回退 raw blob** — 以前 parse 失败会把整段带 `Version:0.9` 头的 CF_HTML 原始数据存进 DB；复制时 `build_cf_html_blob` 再包一层产生嵌套头部，Word/浏览器拒绝渲染。现在解析失败直接返回 None，该 clip 走纯文本路径。
+- **DB v2 迁移** — 清理历史中已入库的脏 `content_html`（`WHERE content_html LIKE 'Version:0.%'`），确保老用户升级后不再触发上述嵌套头部。
+
+### 交互改进
+
+- **主窗口改双击复制** — 单击仅选中卡片（避免误触），双击才真正复制到剪贴板。右上角 Copy 按钮和 Enter 键仍为显式复制入口。极简弹窗（Ctrl+M）保留单击复制+粘贴（uTools 流）。
+- **批量删除** — `window.confirm` 替换为自建模态确认框，风格与清空历史、其他 confirm 统一。
+- **快捷键帮助面板** — 新增「Double-click → 复制到剪贴板」说明，旧的「Click → 复制」改为「Click → 选中卡片」。
+- **首次启动 Onboarding** — 4 步引导覆盖 Ctrl+Space / Ctrl+M / 双击复制 / Enter 自动粘贴，`localStorage` 标记只弹一次。
+
+### 安全 & 稳定性
+
+- **OpenProcess Handle 泄漏** — `detect.rs` 每次 `get_active_window_process_name` 后 `CloseHandle`。权限从 `PROCESS_QUERY_INFORMATION|VM_READ` 收紧到 `PROCESS_QUERY_LIMITED_INFORMATION`。
+- **perform_ocr / open_path 路径白名单** — 拒绝 `shell:` / UNC / 协议 URI，强制 canonicalize + 存在性校验，OCR 还要求已知图片后缀。
+- **user_prompt_decision 锁顺序** — 先 `take` PendingClipState 释放锁再 lock DB，消除 ABBA deadlock 窗口。
+- **DOMPurify 加 on* 全属性 hook** — `uponSanitizeAttribute` 兜底丢弃任何以 `on` 开头的属性，不再依赖逐个枚举。
+
+### 性能
+
+- **SyntaxHighlighter 懒加载** — `react-syntax-highlighter`（~200KB）改为 dynamic import，首屏不再等语言模块下载。新增 `LazyCodeBlock.tsx`。
+- **图片 hash 两阶段** — 先 SHA256(头 4KiB + 尾 4KiB + length)，命中再全量 hash。4K 截图 (~33MB) 常态从 ~50ms 降到微秒级。
+- **vite manualChunks** — react / lucide / dompurify / tauri-api 各拆独立 chunk，WebView2 可增量缓存。
+- **clipboard_monitor 错误上报** — `insert_clip` 失败时 emit `clip:error` 事件给前端，不再静默吞掉 DB 锁 / 磁盘满等问题。
+
+### i18n 全量覆盖
+
+- `getGroupLabel` 重构为 `getGroupKey`（stable enum），时间分组文案接入 `t('time.*')`。修复 midnight 跨天 diffDays 计算 bug。
+- 空状态 / Copy Confirm Modal / Dashboard RANGES & typeConfig / Settings.tsx 33 处硬编码中文全部接入 i18n。
+- 新增 35+ i18n key（settings.* / modal.* / search.* / onboard.* / mini.everything_* / dash.*）。
+- i18n.ts 去重 11 条冲突 key。
+
+### 产品 / UX
+
+- **系统主题跟随** — 主题循环：dark → light → auto。`auto` 模式监听 `prefers-color-scheme` 变化实时切换。
+- **窗口位置/大小记忆** — `onMoved` / `onResized` debounced 存 localStorage，下次启动恢复。
+- **Everything 友好降级** — SDK 错误分类为 NOT_INSTALLED / NOT_RUNNING，极简弹窗显示对应修复提示。
+
+### 开发体验
+
+- **GitHub Actions CI** — push/PR 自动跑 `cargo test` + `tsc` + `vite build`（`.github/workflows/ci.yml`）。
+- **lint 配置** — `rustfmt.toml` + `clippy.toml`；`package.json` 新增 `typecheck` / `lint:rust` / `fmt:rust` / `test:rust` scripts。
+- **Tauri Updater 占位** — `tauri.conf.json` 配好 endpoints / dialog / pubkey 字段（`active: false`，待维护者配签名密钥后启用）。文档 `docs/UPDATES.md` 详细说明密钥生成 + GitHub Release 发布流程。
+- 清除 App.tsx 12 处 `console.log("[DEBUG]...")` 残留。
+- 修 `ocr.rs` unused import + `clipboard_monitor.rs` unused Result warning → 0 warning build。
+
+### README 重写
+
+- 首屏 tagline + ASCII 三栏对比图 + 「三件事决定你装不装」场景化卖点
+- 30 秒上手前置 + 对比表简化 + 用户画像
+- 完整功能改 `<details>` 折叠
+
+---
+
 ## [0.5.0] - 2026-04-21
 
 ### 富文本 (HTML) 保留 — 补齐最大短板

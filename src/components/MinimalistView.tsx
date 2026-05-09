@@ -44,6 +44,7 @@ interface MinimalistViewProps {
     fileCategory: string;
     setFileCategory: (cat: string) => void;
     theme?: "dark" | "light";
+    everythingStatus?: "ok" | "not_installed" | "not_running" | null;
 }
 
 const CATEGORIES = [
@@ -79,6 +80,7 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
     fileCategory,
     setFileCategory,
     theme = "dark",
+    everythingStatus = null,
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
@@ -230,6 +232,22 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                         <p className="text-white/20 text-sm font-medium">
                             {search ? t('mini.no_results') : t('mini.type_to_search')}
                         </p>
+                        {/* File search remediation hint — only when user is in a category that
+                            relies on Everything and the SDK reported a known failure mode. */}
+                        {(["everything", "doc", "image", "exe", "folder"].includes(fileCategory)) && (everythingStatus === "not_installed" || everythingStatus === "not_running") && (
+                            <div className="max-w-md text-center px-6 py-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                                <p className="text-amber-400/90 text-xs font-bold mb-1">
+                                    {everythingStatus === "not_installed"
+                                        ? t('mini.everything_not_installed_title')
+                                        : t('mini.everything_not_running_title')}
+                                </p>
+                                <p className="text-[var(--text-dim)] text-[11px] leading-relaxed">
+                                    {everythingStatus === "not_installed"
+                                        ? t('mini.everything_not_installed_body')
+                                        : t('mini.everything_not_running_body')}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     results.map((clip, index) => {

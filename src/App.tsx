@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { t, initLocale } from "./i18n";
-import { appWindow } from "@tauri-apps/api/window";
+import { appWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import {
     Copy,
     Trash2,
@@ -33,55 +33,74 @@ import Dashboard from "./components/Dashboard";
 import MinimalistView from "./components/MinimalistView";
 import { LayoutDashboard } from "lucide-react";
 import Tooltip from "./components/Tooltip";
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark, prism } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import LazyCodeBlock from './components/LazyCodeBlock';
+import Onboarding, { shouldShowOnboarding } from './components/Onboarding';
 import DOMPurify from 'dompurify';
+
+// Belt-and-suspenders: drop ANY attribute whose name begins with `on`.
+// The default HTML profile already strips known event handlers, but a
+// blanket hook is resilient to new handler names (`onbeforeinput`,
+// `onpointerrawupdate`, etc.) and to any future config drift in our
+// explicit FORBID_ATTR list.
+DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
+    if (data.attrName && data.attrName.toLowerCase().startsWith('on')) {
+        data.keepAttr = false;
+    }
+});
 
 const sanitizeHtml = (html: string): string => {
     try {
         return DOMPurify.sanitize(html, {
             USE_PROFILES: { html: true },
             FORBID_TAGS: ['style', 'link', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
-            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'autofocus'],
+            // Explicit list kept as defence-in-depth alongside the on* hook above.
+            FORBID_ATTR: ['srcset', 'autofocus', 'formaction'],
         });
     } catch {
         return '';
     }
 };
 
-const getGroupLabel = (dateStr: string): string => {
+// Returns a stable group key, NOT a localized string. Render with t('time.' + key).
+// Stable keys also let NAV_SHORT_LABELS index reliably across locales.
+type GroupKey =
+    | 'within_1h' | 'within_3h'
+    | 'today_morning' | 'today_afternoon' | 'today_evening'
+    | 'yesterday' | 'last_7d' | 'earlier';
+
+const getGroupKey = (dateStr: string): GroupKey => {
     const d = new Date(dateStr);
     const now = new Date();
-    const isSameDay = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const isYesterday = d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
-    
-    const diffTime = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
-    
-    if (isSameDay) {
-        if (diffTime < 60 * 60 * 1000) return "一小时内";
-        if (diffTime < 3 * 60 * 60 * 1000) return "三小时内";
+    // Use midnight-anchored date diff so a 23:30→00:30 jump puts the older
+    // entry into "yesterday", not "last_7d" via floor(diff/24h)==0.
+    const dMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayDiff = Math.round((nowMidnight - dMidnight) / (24 * 60 * 60 * 1000));
+
+    const diffMs = now.getTime() - d.getTime();
+
+    if (dayDiff === 0) {
+        if (diffMs < 60 * 60 * 1000) return 'within_1h';
+        if (diffMs < 3 * 60 * 60 * 1000) return 'within_3h';
         const hour = d.getHours();
-        if (hour < 12) return "今天上午";
-        if (hour < 18) return "今天下午";
-        return "今天晚上";
+        if (hour < 12) return 'today_morning';
+        if (hour < 18) return 'today_afternoon';
+        return 'today_evening';
     }
-    if (isYesterday) return "昨天";
-    if (diffDays <= 7) return "近7天";
-    return "更早";
+    if (dayDiff === 1) return 'yesterday';
+    if (dayDiff <= 7) return 'last_7d';
+    return 'earlier';
 };
 
-const NAV_SHORT_LABELS: Record<string, string> = {
-    "一小时内": "1h",
-    "三小时内": "3h",
-    "今天上午": "早",
-    "今天下午": "午",
-    "今天晚上": "晚",
-    "昨天": "昨",
-    "近7天": "7d",
-    "更早": "前"
+const NAV_SHORT_LABELS: Record<GroupKey, string> = {
+    within_1h: '1h',
+    within_3h: '3h',
+    today_morning: '早',
+    today_afternoon: '午',
+    today_evening: '晚',
+    yesterday: '昨',
+    last_7d: '7d',
+    earlier: '前',
 };
 
 const detectLanguage = (text: string): string => {
@@ -178,8 +197,15 @@ function App() {
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [ocrData, setOcrData] = useState<OcrResult | null>(null);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+    // Per-card delete uses optimistic remove + 3s undo (Gmail-style),
+    // no per-row confirm modal. Bulk delete is destructive over many rows
+    // so it gets its own explicit confirm modal.
+    const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
     const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+    // Everything SDK availability — null = unknown / never tried; "ok" = working;
+    // "not_installed" / "not_running" → minimalist view shows a remediation hint.
+    const [everythingStatus, setEverythingStatus] = useState<"ok" | "not_installed" | "not_running" | null>(null);
+    const [showOnboarding, setShowOnboarding] = useState<boolean>(() => shouldShowOnboarding());
     const [copyFeedback, setCopyFeedback] = useState(false);
     const [copyConfirmClip, setCopyConfirmClip] = useState<{clip: Clip, shouldPaste: boolean} | null>(null);
     const [isDashboard, setIsDashboard] = useState(true);
@@ -207,37 +233,120 @@ function App() {
     const wasDraggingSegmentsRef = useRef(false);
     const segmentDragStartIdx = useRef<number | null>(null);
     const segmentDragActiveId = useRef<number | null>(null);
+    // `themePref` is the user's preference: dark / light / auto (auto = follow OS).
+    // `theme` is the resolved value used for rendering ("dark" or "light"); when
+    // pref is auto we recompute it from `prefers-color-scheme` and react to OS changes.
+    const [themePref, setThemePref] = useState<'dark' | 'light' | 'auto'>('dark');
     const [theme, setTheme] = useState<'dark' | 'light'>('dark');
     const [entities, setEntities] = useState<{ entity_type: string; value: string; display: string }[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
 
-    // Load theme Preference
+    const applyTheme = (resolved: 'dark' | 'light') => {
+        setTheme(resolved);
+        if (resolved === 'light') {
+            document.documentElement.classList.add("light");
+        } else {
+            document.documentElement.classList.remove("light");
+        }
+    };
+
+    // Load theme preference, resolve, and subscribe to OS change when on `auto`.
     useEffect(() => {
         const initTheme = async () => {
             const saved = localStorage.getItem("theme");
             const dbTheme = await invoke("get_setting", { key: "theme" }).catch(() => null);
-            const finalTheme = (dbTheme || saved || 'dark') as 'dark' | 'light';
-            
-            setTheme(finalTheme);
-            if (finalTheme === 'light') {
-                document.documentElement.classList.add("light");
+            const pref = ((dbTheme || saved || 'dark') as 'dark' | 'light' | 'auto');
+            setThemePref(pref);
+            if (pref === 'auto') {
+                const mql = window.matchMedia('(prefers-color-scheme: dark)');
+                applyTheme(mql.matches ? 'dark' : 'light');
             } else {
-                document.documentElement.classList.remove("light");
+                applyTheme(pref);
             }
         };
         initTheme();
     }, []);
 
+    // When in `auto` mode, react live to OS theme changes (e.g. user flips
+    // Windows Settings → Personalization → Colors).
+    useEffect(() => {
+        if (themePref !== 'auto') return;
+        const mql = window.matchMedia('(prefers-color-scheme: dark)');
+        const handler = (e: MediaQueryListEvent) => applyTheme(e.matches ? 'dark' : 'light');
+        mql.addEventListener('change', handler);
+        // Sync once on mount in case OS changed between init and effect attach.
+        applyTheme(mql.matches ? 'dark' : 'light');
+        return () => mql.removeEventListener('change', handler);
+    }, [themePref]);
+
+    // ── Window position / size memory ──
+    // Persist in localStorage on resize/move (debounced) and restore on mount.
+    // Skipped when the saved geometry would land off-screen (monitor changed).
+    useEffect(() => {
+        const STORAGE_KEY = "super-clip:window-geometry";
+        let restored = false;
+
+        const restore = async () => {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return;
+                const g = JSON.parse(raw) as { x: number; y: number; w: number; h: number };
+                if (
+                    typeof g.x !== "number" || typeof g.y !== "number" ||
+                    typeof g.w !== "number" || typeof g.h !== "number" ||
+                    g.w < 320 || g.h < 240
+                ) return;
+                // Best-effort sanity check: visible portion of any monitor.
+                // Negative coords are valid for multi-monitor setups so we don't reject them.
+                if (Math.abs(g.x) > 30000 || Math.abs(g.y) > 30000) return;
+                await appWindow.setPosition(new PhysicalPosition(g.x, g.y));
+                await appWindow.setSize(new PhysicalSize(g.w, g.h));
+            } catch {
+                // ignore — corrupt storage just falls back to default geometry
+            } finally {
+                restored = true;
+            }
+        };
+        restore();
+
+        let saveTimer: ReturnType<typeof setTimeout> | null = null;
+        const schedSave = async () => {
+            if (!restored) return;
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(async () => {
+                try {
+                    const pos = await appWindow.outerPosition();
+                    const size = await appWindow.outerSize();
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                        x: pos.x, y: pos.y, w: size.width, h: size.height,
+                    }));
+                } catch { /* noop */ }
+            }, 500);
+        };
+
+        const unMoved = appWindow.onMoved(schedSave);
+        const unResized = appWindow.onResized(schedSave);
+        return () => {
+            if (saveTimer) clearTimeout(saveTimer);
+            unMoved.then(f => f());
+            unResized.then(f => f());
+        };
+    }, []);
+
     const toggleTheme = () => {
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        setTheme(newTheme);
-        if (newTheme === 'light') {
-            document.documentElement.classList.add("light");
+        // Cycle: dark → light → auto → dark
+        const nextPref: 'dark' | 'light' | 'auto' =
+            themePref === 'dark' ? 'light' :
+            themePref === 'light' ? 'auto' : 'dark';
+        setThemePref(nextPref);
+        if (nextPref === 'auto') {
+            const mql = window.matchMedia('(prefers-color-scheme: dark)');
+            applyTheme(mql.matches ? 'dark' : 'light');
         } else {
-            document.documentElement.classList.remove("light");
+            applyTheme(nextPref);
         }
-        localStorage.setItem("theme", newTheme);
-        invoke("save_setting", { key: "theme", value: newTheme }).catch(console.error);
+        localStorage.setItem("theme", nextPref);
+        invoke("save_setting", { key: "theme", value: nextPref }).catch(console.error);
     };
 
 
@@ -282,8 +391,17 @@ function App() {
 
             if (shouldSearchEverything) {
                 invoke<any[]>("search_files", { query })
-                    .then(setEverythingFiles)
-                    .catch(() => setEverythingFiles([]));
+                    .then(files => {
+                        setEverythingFiles(files);
+                        setEverythingStatus("ok");
+                    })
+                    .catch(err => {
+                        setEverythingFiles([]);
+                        const msg = String(err);
+                        if (msg.includes("EVERYTHING_NOT_INSTALLED")) setEverythingStatus("not_installed");
+                        else if (msg.includes("EVERYTHING_NOT_RUNNING")) setEverythingStatus("not_running");
+                        // Other errors: leave status as-is (don't downgrade a working state on a transient hiccup)
+                    });
             } else {
                 setEverythingFiles([]);
             }
@@ -396,7 +514,6 @@ function App() {
     }, []); // Now stable — no deps needed thanks to useRef
 
     const executeCopy = useCallback(async (clip: Clip, shouldPaste: boolean = false) => {
-        console.log("[DEBUG] executeCopy called for item:", clip.id, "Type:", clip.type, "shouldPaste:", shouldPaste);
         try {
             await invoke("copy_to_clipboard", { content: clip.content, kind: clip.type, contentHtml: clip.content_html ?? null });
             setCopyFeedback(true);
@@ -470,13 +587,19 @@ function App() {
         }
     };
 
-    const handleBulkDelete = async () => {
-        if (window.confirm(`确定删除选中的 ${selectedIds.length} 条记录吗？`)) {
-            await invoke("batch_delete_clips", { ids: selectedIds });
-            setSelectedIds([]);
-            setIsMultiSelect(false);
-            loadClips();
-        }
+    const handleBulkDelete = () => {
+        // Open the in-app confirm modal instead of native window.confirm —
+        // keeps the visual style consistent with single-clip / clear-all
+        // confirms and stays themable in dark/light.
+        setIsBulkDeleteConfirmOpen(true);
+    };
+
+    const performBulkDelete = async () => {
+        await invoke("batch_delete_clips", { ids: selectedIds });
+        setSelectedIds([]);
+        setIsMultiSelect(false);
+        setIsBulkDeleteConfirmOpen(false);
+        loadClips();
     };
 
     // Keyboard event handler
@@ -497,7 +620,7 @@ function App() {
                 // 2. Close settings modal
                 if (isSettingsOpen) { setIsSettingsOpen(false); return; }
                 // 3. Close delete/clear/copy confirm dialogs
-                if (deleteConfirmId) { setDeleteConfirmId(null); return; }
+                if (isBulkDeleteConfirmOpen) { setIsBulkDeleteConfirmOpen(false); return; }
                 if (isClearConfirmOpen) { setIsClearConfirmOpen(false); return; }
                 if (copyConfirmClip) { setCopyConfirmClip(null); return; }
                 // 4. Exit minimalist mode
@@ -528,23 +651,17 @@ function App() {
                 const selection = window.getSelection();
                 const selectedText = selection ? selection.toString() : "";
 
-                console.log("[DEBUG] Ctrl+C keydown detected. SelectionLength:", selectedText.length, "SelectedIndex:", selectedIndex);
-
                 if (selectedText.length > 0) {
-                    console.log("[DEBUG] Priority Copy: Selected Text");
                     e.preventDefault();
                     handleCopy({ content: selectedText, type: "text" } as Clip);
                     return;
                 }
 
                 if (selectedIndex >= 0 && filteredClipsRef.current[selectedIndex]) {
-                    console.log("[DEBUG] Priority Copy: Highlighted Item ID:", filteredClipsRef.current[selectedIndex].id);
                     e.preventDefault();
                     handleCopy(filteredClipsRef.current[selectedIndex]);
                     return;
                 }
-
-                console.log("[DEBUG] Ctrl+C: Nothing to copy.");
             }
 
             // Arrow keys navigation
@@ -578,12 +695,11 @@ function App() {
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [selectedIndex, previewImage, handleCopy, isSettingsOpen, deleteConfirmId, isClearConfirmOpen, copyConfirmClip, isMinimalist, isMultiSelect, sourceAppFilter, search, activeTab, showShortcuts]);
+    }, [selectedIndex, previewImage, handleCopy, isSettingsOpen, isBulkDeleteConfirmOpen, isClearConfirmOpen, copyConfirmClip, isMinimalist, isMultiSelect, sourceAppFilter, search, activeTab, showShortcuts]);
 
     // Handle native copy event for maximum reliability (backup)
     useEffect(() => {
         const handleCopyNative = (_e: ClipboardEvent) => {
-            console.log("[DEBUG] Native 'copy' event fired (from menu or other source)");
             const selection = window.getSelection();
             const selectedText = selection ? selection.toString() : "";
 
@@ -591,7 +707,6 @@ function App() {
             if (selectedText.length > 0) {
                 // We still let the browser handle the actual write to clipboard if triggered natively,
                 // but we trigger our DB refresh logic.
-                console.log("[DEBUG] Native text selection copy detected.");
                 setCopyFeedback(true);
                 setTimeout(() => setCopyFeedback(false), 1500);
             }
@@ -625,15 +740,12 @@ function App() {
     // Global Context Menu (Right Click) for Text Selection
     useEffect(() => {
         const handleContextMenuGlobal = (e: MouseEvent) => {
-            console.log("[DEBUG] Context menu (right-click) fired");
             e.preventDefault(); // Prevent default Tauri context menu
 
             const selection = window.getSelection();
             const selectedText = selection ? selection.toString().trim() : "";
-            console.log("[DEBUG] Right-click selected text:", selectedText);
 
             if (selectedText.length > 0) {
-                console.log("[DEBUG] Opening custom text copy context menu");
                 setContextMenu({
                     x: e.clientX,
                     y: e.clientY,
@@ -646,7 +758,6 @@ function App() {
 
         const handleClickGlobal = () => {
             if (contextMenu) {
-                console.log("[DEBUG] Click triggered, closing context menu");
             }
             setContextMenu(null);
         };
@@ -701,7 +812,6 @@ function App() {
     const [undoDelete, setUndoDelete] = useState<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null);
 
     const deleteClip = async (id: number) => {
-        setDeleteConfirmId(null);
         // Optimistic remove from UI
         setClips(prev => prev.filter(c => c.id !== id));
         // Delayed actual delete with undo window
@@ -790,8 +900,9 @@ function App() {
     // Keep ref in sync so keyboard handler always reads current list
     filteredClipsRef.current = filteredClips;
 
+    // Stable GroupKey set, locale-independent. Display via t('time.' + key).
     const availableGroups = useMemo(() => {
-        return Array.from(new Set(filteredClips.map(clip => getGroupLabel(clip.created_at))));
+        return Array.from(new Set(filteredClips.map(clip => getGroupKey(clip.created_at))));
     }, [filteredClips]);
 
     const renderContent = (clip: Clip) => {
@@ -813,7 +924,6 @@ function App() {
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setPreviewImage(clip.content);
-                                console.log("[DEBUG] Target image:", clip.content);
                                 invoke("perform_ocr", { id: clip.id, path: clip.content })
                                     .then((res) => setOcrData(res as OcrResult))
                                     .catch((err) => {
@@ -860,22 +970,11 @@ function App() {
                             </button>
                         </div>
 
-                        <SyntaxHighlighter
+                        <LazyCodeBlock
                             language={detectedLang}
-                            style={theme === 'dark' ? atomDark : prism}
-                            showLineNumbers={true}
-                            lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1em', color: 'var(--text-dim)', textAlign: 'right', fontSize: '11px', userSelect: 'none' }}
-                            customStyle={{
-                                margin: 0,
-                                padding: '16px 12px',
-                                fontSize: '12px',
-                                lineHeight: '1.6',
-                                background: 'transparent',
-                                fontFamily: '"Fira Code", "Cascadia Code", "JetBrains Mono", monospace',
-                            }}
-                        >
-                            {clip.content.length > 2000 ? clip.content.slice(0, 2000) + "\n... (truncated for preview)" : clip.content}
-                        </SyntaxHighlighter>
+                            theme={theme}
+                            code={clip.content.length > 2000 ? clip.content.slice(0, 2000) + "\n... (truncated for preview)" : clip.content}
+                        />
                     </div>
 
                 </div>
@@ -1143,6 +1242,7 @@ function App() {
                     <input
                         type="text"
                         placeholder={t('search.placeholder')}
+                        aria-label={t('search.placeholder')}
                         className="w-full bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg pl-10 pr-12 py-2 text-sm focus:outline-none focus:border-indigo-500/50 transition-all placeholder:text-[var(--text-dim)] focus:bg-[var(--panel-hover)]"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
@@ -1250,7 +1350,7 @@ function App() {
             <div className="flex-1 flex overflow-hidden">
                 {/* List View (Main) */}
                 <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isDashboard ? "border-r border-white/5" : ""}`}>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
+                    <div role="listbox" aria-label="Clipboard history" className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
                         {filteredClips.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-full text-[var(--text-dim)] space-y-4 px-8">
                                 {clips.length === 0 ? (
@@ -1266,38 +1366,48 @@ function App() {
                                 ) : debouncedSearch ? (
                                     <>
                                         <ScanSearch size={28} className="opacity-20" />
-                                        <p className="text-xs">未找到匹配 "<span className="text-indigo-400">{debouncedSearch}</span>" 的记录</p>
+                                        <p className="text-xs">{t('search.no_match_for', { q: debouncedSearch })}</p>
                                     </>
                                 ) : (
                                     <>
                                         <Copy size={28} className="opacity-20" />
-                                        <p className="text-xs">当前筛选条件下没有记录</p>
+                                        <p className="text-xs">{t('search.no_filter_results')}</p>
                                     </>
                                 )}
                             </div>
                         ) : (
                             (() => {
-                                let currentLabel = "";
+                                let currentKey: GroupKey | "" = "";
                                 return filteredClips.map((clip, index) => {
                                     const isSelected = selectedIds.includes(clip.id);
-                                    const label = getGroupLabel(clip.created_at);
-                                    const isNewGroup = label !== currentLabel;
-                                    if (isNewGroup) currentLabel = label;
+                                    const key = getGroupKey(clip.created_at);
+                                    const isNewGroup = key !== currentKey;
+                                    if (isNewGroup) currentKey = key;
 
                                     return (
                                         <React.Fragment key={clip.id}>
                                             {isNewGroup && (
-                                                <div id={`group-${label}`} className="sticky top-2 z-10 w-full flex justify-center mb-4 mt-2 pointer-events-none">
+                                                <div id={`group-${key}`} className="sticky top-2 z-10 w-full flex justify-center mb-4 mt-2 pointer-events-none">
                                                     <span className="bg-[var(--panel-bg)]/90 backdrop-blur-md border border-[var(--border-color)] text-[var(--text-main)] px-4 py-1 rounded-full text-[10px] font-bold tracking-widest shadow-sm pointer-events-auto">
-                                                        {label}
+                                                        {t(`time.${key}`)}
                                                     </span>
                                                 </div>
                                             )}
                                             <div
+                                                role="option"
+                                                aria-selected={index === selectedIndex}
                                                 onClick={(e) => {
+                                            // Single click only toggles multi-select.
+                                            // Copying via single click was too easy to misfire — use
+                                            // double-click, Enter, or the right-side Copy button instead.
                                             if (isMultiSelect) {
                                                 toggleSelect(clip.id, e.shiftKey);
                                             } else {
+                                                setSelectedIndex(index);
+                                            }
+                                        }}
+                                        onDoubleClick={() => {
+                                            if (!isMultiSelect) {
                                                 handleCopy(clip);
                                             }
                                         }}
@@ -1486,14 +1596,14 @@ function App() {
                         </button>
                         <div className="w-px h-3 bg-white/10" />
                         
-                        {availableGroups.map((group) => (
+                        {availableGroups.map((groupKey) => (
                             <button
-                                key={group}
-                                onClick={() => document.getElementById(`group-${group}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                                title={group}
+                                key={groupKey}
+                                onClick={() => document.getElementById(`group-${groupKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                title={t(`time.${groupKey}`)}
                                 className="w-8 h-8 flex items-center justify-center rounded-full text-[11px] font-bold text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-indigo-500/20 transition-all shadow-sm border border-transparent hover:border-indigo-500/30"
                             >
-                                {NAV_SHORT_LABELS[group] || group.slice(0, 1)}
+                                {NAV_SHORT_LABELS[groupKey]}
                             </button>
                         ))}
 
@@ -1686,27 +1796,27 @@ function App() {
             {/* Settings Modal */}
             <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-            {/* Delete Confirmation Modal */}
+            {/* Bulk Delete Confirmation Modal */}
             {
-                deleteConfirmId && (
-                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                isBulkDeleteConfirmOpen && (
+                    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                         <div className="bg-[var(--panel-bg)] w-full max-w-sm rounded-2xl border border-[var(--border-color)] shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
                             <div className="flex items-center gap-3 text-red-500">
                                 <AlertCircle size={24} />
-                                <h3 className="font-semibold text-[var(--text-main)]">{t('modal.delete_title')}</h3>
+                                <h3 className="font-semibold text-[var(--text-main)]">{t('modal.bulk_delete_title')}</h3>
                             </div>
                             <p className="text-sm text-[var(--text-dim)] leading-relaxed">
-                                {t('modal.delete_body')}
+                                {t('modal.bulk_delete_body', { n: String(selectedIds.length) })}
                             </p>
                             <div className="flex gap-3 pt-2">
                                 <button
-                                    onClick={() => setDeleteConfirmId(null)}
+                                    onClick={() => setIsBulkDeleteConfirmOpen(false)}
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] transition-all"
                                 >
                                     {t('action.cancel')}
                                 </button>
                                 <button
-                                    onClick={() => deleteConfirmId && deleteClip(deleteConfirmId)}
+                                    onClick={performBulkDelete}
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-all shadow-lg shadow-red-500/20"
                                 >
                                     {t('action.confirm_delete')}
@@ -1720,7 +1830,7 @@ function App() {
             {/* Clear All Confirmation Modal */}
             {
                 isClearConfirmOpen && (
-                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                         <div className="bg-[var(--panel-bg)] w-full max-w-sm rounded-2xl border border-[var(--border-color)] shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
                             <div className="flex items-center gap-3 text-red-500">
                                 <Eraser size={24} />
@@ -1751,29 +1861,29 @@ function App() {
             {/* Copy Confirmation Modal */}
             {
                 copyConfirmClip && (
-                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                         <div className="bg-[var(--panel-bg)] w-full max-w-sm rounded-2xl border border-[var(--border-color)] shadow-2xl p-6 space-y-4 animate-in zoom-in-95 duration-200">
                             <div className="flex items-center gap-3 text-indigo-500">
                                 <Copy size={24} />
-                                <h3 className="font-semibold text-[var(--text-main)]">放入系统剪贴板</h3>
+                                <h3 className="font-semibold text-[var(--text-main)]">{t('modal.copy_title')}</h3>
                             </div>
                             <p className="text-sm text-[var(--text-dim)] leading-relaxed">
-                                是否将选中内容覆盖到系统剪贴板中？
+                                {t('modal.copy_body')}
                             </p>
                             <label className="flex items-center gap-2 mt-2 cursor-pointer text-sm text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors">
-                                <input 
-                                    type="checkbox" 
+                                <input
+                                    type="checkbox"
                                     className="rounded border-[var(--border-color)] bg-[var(--input-bg)] text-indigo-500 focus:ring-indigo-500 cursor-pointer"
                                     id="remember-copy"
                                 />
-                                记住选择，以后直接放入
+                                {t('modal.copy_remember')}
                             </label>
                             <div className="flex gap-3 pt-2">
                                 <button
                                     onClick={() => setCopyConfirmClip(null)}
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] transition-all"
                                 >
-                                    取消
+                                    {t('action.cancel')}
                                 </button>
                                 <button
                                     onClick={() => {
@@ -1787,7 +1897,7 @@ function App() {
                                     }}
                                     className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-lg shadow-indigo-500/20"
                                 >
-                                    确定提取
+                                    {t('action.confirm_extract')}
                                 </button>
                             </div>
                         </div>
@@ -1848,6 +1958,7 @@ function App() {
                     fileCategory={fileCategory}
                     setFileCategory={setFileCategory}
                     theme={theme}
+                    everythingStatus={everythingStatus}
                 />
             )}
 
@@ -1862,6 +1973,7 @@ function App() {
                         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[12px]">
                             {[
                                 ["Click", t('shortcut.click')],
+                                ["Double-click", t('shortcut.dblclick')],
                                 ["Enter", t('shortcut.enter')],
                                 ["↑ ↓", t('shortcut.arrows')],
                                 ["Space", t('shortcut.space')],
@@ -1898,6 +2010,9 @@ function App() {
                     </div>
                 </div>
             )}
+
+            {/* First-launch onboarding */}
+            {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
 
             {/* Global Copy Toast */}
             {copyFeedback && (

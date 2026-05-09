@@ -140,8 +140,8 @@ pub fn get_active_window_source() -> Option<String> {
 #[cfg(target_os = "windows")]
 fn get_active_window_process_name() -> Option<String> {
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
-    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT};
-    use windows::Win32::Foundation::MAX_PATH;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT};
+    use windows::Win32::Foundation::{CloseHandle, MAX_PATH};
 
     unsafe {
         let hwnd = GetForegroundWindow();
@@ -151,12 +151,26 @@ fn get_active_window_process_name() -> Option<String> {
         GetWindowThreadProcessId(hwnd, Some(&mut process_id));
         if process_id == 0 { return None; }
 
-        let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, process_id).ok()?;
+        // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageNameW
+        // and works even on protected processes where QUERY_INFORMATION|VM_READ would fail.
+        let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
 
         let mut buffer = [0u16; MAX_PATH as usize];
         let mut size = buffer.len() as u32;
 
-        if QueryFullProcessImageNameW(process_handle, PROCESS_NAME_FORMAT(0), windows::core::PWSTR(buffer.as_mut_ptr()), &mut size).is_ok() {
+        let result = QueryFullProcessImageNameW(
+            process_handle,
+            PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buffer.as_mut_ptr()),
+            &mut size,
+        );
+
+        // Always close the handle — earlier versions of this function leaked
+        // one process handle per active-window query (i.e. once per clipboard
+        // change), which over hours/days could exhaust the handle table.
+        let _ = CloseHandle(process_handle);
+
+        if result.is_ok() {
             let path = String::from_utf16_lossy(&buffer[..size as usize]);
             if let Some(file_name) = std::path::Path::new(&path).file_name() {
                 return Some(file_name.to_string_lossy().to_string());

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { message as tauriMessage, save as saveDialog, open as openDialog, confirm as confirmDialog } from "@tauri-apps/api/dialog";
+import { save as saveDialog, open as openDialog, confirm as confirmDialog } from "@tauri-apps/api/dialog";
 import { X, Settings as SettingsIcon, Save, RotateCcw, Globe, Download, Upload } from "lucide-react";
 import Tooltip from "./Tooltip";
 import { t, getLocale, setLocale, type Locale } from "../i18n";
@@ -191,17 +191,13 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
 
             setShortcut(finalShortcut);
             setMiniShortcut(finalMiniShortcut);
-            setMessage({ text: "设置已保存", type: 'success' });
-            
-            // Show Native Confirmation Window using Tauri API!
-            await tauriMessage("✅ 所有配置项已成功保存且立即生效！", {
-                title: "Super Clip 设置",
-                type: "info"
-            });
-            
+            setMessage({ text: t('settings.saved'), type: 'success' });
+            // Native OS dialog removed — the inline `setMessage` toast already
+            // tells the user it saved, and stacking a modal on top forces a
+            // second click before the settings panel can close.
             onClose();
         } catch (error) {
-            setMessage({ text: `保存失败: ${error}`, type: 'error' });
+            setMessage({ text: t('settings.save_failed', { e: String(error) }), type: 'error' });
         } finally {
             setSaving(false);
         }
@@ -211,11 +207,11 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
     if (!isOpen) return null;
 
     const retentionOptions = [
-        { label: "永久保留", value: 0 },
-        { label: "1 天", value: 1 },
-        { label: "7 天", value: 7 },
-        { label: "30 天", value: 30 },
-        { label: "90 天", value: 90 },
+        { label: t('settings.retention_forever'), value: 0 },
+        { label: t('settings.retention_1d'),       value: 1 },
+        { label: t('settings.retention_7d'),       value: 7 },
+        { label: t('settings.retention_30d'),      value: 30 },
+        { label: t('settings.retention_90d'),      value: 90 },
     ];
 
     return (
@@ -228,9 +224,9 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                 <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <SettingsIcon className="text-indigo-400 w-5 h-5" />
-                        <h2 className="font-semibold text-[var(--text-main)]">设置</h2>
+                        <h2 className="font-semibold text-[var(--text-main)]">{t('settings.title')}</h2>
                     </div>
-                    <Tooltip text="关闭设置" position="bottom">
+                    <Tooltip text={t('settings.close')} position="bottom">
                         <button onClick={onClose} className="text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors p-1 hover:bg-[var(--panel-hover)] rounded">
                             <X size={20} />
                         </button>
@@ -332,7 +328,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     {/* Hotkey Section */}
                     <div className="space-y-3">
                         <label className="text-xs font-medium text-[var(--text-dim)] uppercase tracking-wider block">
-                            全局呼出快捷键
+                            {t('settings.hotkey_main')}
                         </label>
                         <div className="flex gap-2">
                             <div
@@ -345,7 +341,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                                     <div className="flex items-center gap-2">
                                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                                         <span className="text-sm font-mono text-indigo-400">
-                                            {tempKeys.length > 0 ? tempKeys.join(" + ") : "录制中..."}
+                                            {tempKeys.length > 0 ? tempKeys.join(" + ") : t('settings.recording')}
                                         </span>
                                     </div>
                                 ) : (
@@ -354,7 +350,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                                     </span>
                                 )}
                             </div>
-                            <Tooltip text="点击并按下新按键组合" position="top">
+                            <Tooltip text={t('settings.hotkey_record_tip')} position="top">
                                 <button
                                     onClick={() => {
                                         setIsRecording('main');
@@ -370,14 +366,14 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                             </Tooltip>
                         </div>
                         <p className="text-[10px] text-gray-600 italic">
-                            提示: 点击右侧按钮并按下新的按键组合进行录制。
+                            {t('settings.hotkey_help')}
                         </p>
                     </div>
 
                     {/* Minimalist Mode Shortcut */}
                     <div className="space-y-3 border-t border-white/5 pt-6">
                         <label className="text-xs font-medium text-[var(--text-dim)] uppercase tracking-wider block">
-                            极简模式快捷键
+                            {t('settings.hotkey_mini')}
                         </label>
                         <div className="flex gap-2">
                             <div
@@ -390,7 +386,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                                     <div className="flex items-center gap-2">
                                         <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                                         <span className="text-sm font-mono text-cyan-400">
-                                            {tempMiniKeys.length > 0 ? tempMiniKeys.join(" + ") : "录制中..."}
+                                            {tempMiniKeys.length > 0 ? tempMiniKeys.join(" + ") : t('settings.recording')}
                                         </span>
                                     </div>
                                 ) : (
@@ -399,7 +395,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                                     </span>
                                 )}
                             </div>
-                            <Tooltip text="设定极简模式按键" position="top">
+                            <Tooltip text={t('settings.hotkey_mini_tip')} position="top">
                                 <button
                                     onClick={() => {
                                         setIsRecording('mini');
@@ -415,7 +411,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                             </Tooltip>
                         </div>
                         <p className="text-[10px] text-gray-600 italic">
-                            应用内按此快捷键切换极简搜索模式。默认 Ctrl+M。
+                            {t('settings.hotkey_mini_help')}
                         </p>
                     </div>
 
@@ -424,10 +420,10 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                         <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)]">
                             <div className="space-y-0.5">
                                 <label className="text-sm font-medium text-[var(--text-main)] block">
-                                    开机自动启动
+                                    {t('settings.autostart')}
                                 </label>
                                 <p className="text-[10px] text-[var(--text-dim)]">
-                                    跟随系统启动时自动运行并在后台驻留
+                                    {t('settings.autostart_help')}
                                 </p>
                             </div>
                             <button
@@ -445,10 +441,10 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                         <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)]">
                             <div className="space-y-0.5">
                                 <label className="text-sm font-medium text-[var(--text-main)] block">
-                                    新剪贴板内容提示
+                                    {t('settings.intercept_prompt')}
                                 </label>
                                 <p className="text-[10px] text-[var(--text-dim)]">
-                                    开启时每次在外部 `Ctrl+C` 都会弹窗询问是否收录
+                                    {t('settings.intercept_prompt_help')}
                                 </p>
                             </div>
                             <button
@@ -465,10 +461,10 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                         <div className="flex items-center justify-between p-3 bg-[var(--input-bg)] rounded-xl border border-[var(--border-color)]">
                             <div className="space-y-0.5">
                                 <label className="text-sm font-medium text-[var(--text-main)] block">
-                                    双击 Ctrl 呼出窗口
+                                    {t('settings.double_ctrl')}
                                 </label>
                                 <p className="text-[10px] text-[var(--text-dim)]">
-                                    快速按下两次 Ctrl 键来显示或隐藏主窗口 (Windows 专享)
+                                    {t('settings.double_ctrl_help')}
                                 </p>
                             </div>
                             <button
@@ -487,7 +483,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     {/* Auto Cleanup Section */}
                     <div className="space-y-3 border-t border-white/5 pt-6">
                         <label className="text-xs font-medium text-[var(--text-dim)] uppercase tracking-wider block">
-                            自动清理历史记录
+                            {t('settings.retention_title')}
                         </label>
                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                             {retentionOptions.map((opt) => (
@@ -504,17 +500,17 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                             ))}
                         </div>
                         <p className="text-[10px] text-gray-600 italic">
-                            注意: 置顶 📌 和 收藏 ⭐ 的内容永远不会被自动清理。
+                            {t('settings.retention_help')}
                         </p>
                     </div>
 
                     {/* Privacy: Ignored Apps */}
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
-                            Privacy — Ignored Apps
+                            {t('settings.ignored_title')}
                         </label>
                         <p className="text-[10px] text-gray-600">
-                            Clipboard content from these apps will never be recorded.
+                            {t('settings.ignored_help')}
                         </p>
                         <div className="flex gap-2">
                             <input
@@ -630,7 +626,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                         onClick={onClose}
                         className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] transition-all"
                     >
-                        取消
+                        {t('action.cancel')}
                     </button>
                     <button
                         onClick={handleSave}
@@ -642,7 +638,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                         ) : (
                             <Save size={18} />
                         )}
-                        保存设置
+                        {t('settings.save_button')}
                     </button>
                 </div>
             </div>
