@@ -5,6 +5,7 @@
 
 mod database;
 mod ocr;
+mod ocr_preload;
 mod detect;
 mod commands;
 mod clipboard_monitor;
@@ -221,6 +222,29 @@ fn main() {
 
             // Start clipboard monitor
             clipboard_monitor::start(handle);
+
+            // Warm-start the ONNX OCR models off the main thread so first-OCR
+            // doesn't pay the ~hundreds-of-ms load cost. Safe if models missing.
+            ocr::warm_start(app.handle());
+            // Start the background OCR preload worker. It consumes image
+            // clips off a bounded queue and pre-populates the DB cache so
+            // `perform_ocr` on user click is instant.
+            ocr_preload::start_worker(app.handle());
+
+            // Force-reset main-window position + size on every boot. Webview2
+            // caches window geometry and on a dev loop where the window once
+            // opened on a secondary monitor / scaled display that's no longer
+            // there, the cached coords can park it entirely off-screen — the
+            // user sees "nothing happened" when clicking the tray. Re-centering
+            // at a sane default every launch avoids that ghost-window class of
+            // bug at essentially zero cost.
+            if let Some(window) = app.get_window("main") {
+                use tauri::LogicalSize;
+                let _ = window.set_size(LogicalSize::new(800.0, 600.0));
+                let _ = window.center();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
 
             Ok(())
         })

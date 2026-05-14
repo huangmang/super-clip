@@ -383,9 +383,17 @@ fn handle_new_clip(app_handle: &tauri::AppHandle, content: String, kind: String,
         .unwrap_or_else(|| "ask".to_string());
 
     if mode == "always" {
+        // Capture the image path *before* `content` is moved into the DB
+        // so we can hand it off to the OCR preload worker after insert.
+        let preload_path: Option<std::path::PathBuf> =
+            if kind == "image" { Some(std::path::PathBuf::from(&content)) } else { None };
+
         match database::insert_clip(&conn, content, kind, source, content_html) {
-            Ok(_) => {
+            Ok(id) => {
                 let _ = app_handle.emit_all("clip:created", ());
+                if let Some(p) = preload_path {
+                    crate::ocr_preload::enqueue(id, p);
+                }
             }
             Err(e) => {
                 eprintln!("[CLIP] insert failed: {}", e);

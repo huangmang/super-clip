@@ -83,8 +83,9 @@ const translations: Record<string, Record<Locale, string>> = {
     // ── App: Image preview ──
     'preview.image_badge': { zh: '图片 · 点击放大', en: 'Image · Click to enlarge' },
     'preview.file_badge': { zh: '文件 · 点击放大', en: 'File · Click to enlarge' },
-    'preview.ocr_done': { zh: '提取完成：可直接在图片上滑动框选文字', en: 'Done — drag to select text on the image' },
+    'preview.ocr_done': { zh: '提取完成：图上拖选文字 · Ctrl+左键 多选行', en: 'Done · drag to select · Ctrl+click for multi-row' },
     'preview.copy_all_ocr': { zh: '一键复制全部', en: 'Copy all text' },
+    'preview.multi_selected': { zh: '已选 {n} 行 · Ctrl+C 复制', en: '{n} lines selected · Ctrl+C to copy' },
     'preview.exit_hint': { zh: '按 ESC 或点击背景退出', en: 'Press ESC or click backdrop to exit' },
 
     // ── App: Toasts ──
@@ -284,6 +285,20 @@ const translations: Record<string, Record<Locale, string>> = {
     'float.close': { zh: '关闭', en: 'Close' },
     'float.copied': { zh: '复制成功', en: 'Copied!' },
     'float.copy_text': { zh: '复制文本', en: 'Copy text' },
+    'float.copy_all': { zh: '复制全部文本', en: 'Copy all text' },
+    'float.click_line_hint': { zh: '单击复制本行 · 拖动选词', en: 'Click to copy line · drag to select words' },
+    'float.copy_table': { zh: '复制为表格', en: 'Copy as table' },
+    'float.reset_view': { zh: '重置视图', en: 'Reset view' },
+    'float.copy_smart_link': { zh: '复制', en: 'Copy' },
+    'float.multi_selected': { zh: '已选 {n} 行 · Ctrl+C 复制', en: '{n} lines selected · Ctrl+C to copy' },
+    'float.multi_copy': { zh: '复制', en: 'Copy' },
+    'float.multi_clear': { zh: '清空', en: 'Clear' },
+    'float.ocr_ready_hint': { zh: '提取完成：图上拖选文字 · Ctrl+左键 多选行', en: 'Done · drag to select · Ctrl+click for multi-row' },
+    'float.ocr_ready_copy_all': { zh: '一键复制全部', en: 'Copy all' },
+    'float.heatmap': { zh: '切换低置信度高亮', en: 'Toggle low-confidence heatmap' },
+    'float.search_in_image': { zh: '搜索图内文字 (Ctrl+F)', en: 'Search text in image (Ctrl+F)' },
+    'float.search_placeholder': { zh: '搜索...', en: 'Search...' },
+    'float.ocr_running': { zh: '识别中…', en: 'Recognizing…' },
 
     // ── Rich text badge ──
     'badge.rich_text': { zh: '富文本', en: 'RTF' },

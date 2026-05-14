@@ -40,6 +40,12 @@ vite.config.ts.timestamp-*
 # AI Model Cache (not needed at runtime)
 src-tauri/.fastembed_cache
 
+# OCR ONNX models — fetched separately, not in git (~170 MB)
+src-tauri/resources/
+
+# Local Claude tooling
+.claude/scheduled_tasks.lock
+
 # Build artifacts
 *.exe
 *.msi

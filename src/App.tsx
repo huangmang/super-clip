@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import OCRLayer, { OcrResult } from "./components/OCRLayer";
+import { OcrResult } from "./components/OCRLayer";
+import ImageOcrViewer from "./components/ImageOcrViewer";
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
@@ -196,6 +197,11 @@ function App() {
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [ocrData, setOcrData] = useState<OcrResult | null>(null);
+    const [ocrLoading, setOcrLoading] = useState(false);
+    // Multi-select / hint state is now owned inside <ImageOcrViewer>; the
+    // modal-level references below are kept only as compatibility no-ops so
+    // the existing Ctrl+C / Escape handlers below don't need surgery. The
+    // viewer intercepts those keys in capture phase before they reach here.
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Per-card delete uses optimistic remove + 3s undo (Gmail-style),
     // no per-row confirm modal. Bulk delete is destructive over many rows
@@ -412,7 +418,6 @@ function App() {
 
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, text: string } | null>(null);
 
-    const previewImgRef = useRef<HTMLImageElement>(null);
     // Use a ref to make filteredClips accessible in the keyboard effect without forward-reference
     const filteredClipsRef = useRef<Clip[]>([]);
 
@@ -427,6 +432,8 @@ function App() {
             }
         }
     }, [previewImage, clips]);
+
+    // (multi-select + hint state now live inside <ImageOcrViewer>; nothing to sync here)
 
     const loadClips = useCallback(async (reset = true) => {
         try {
@@ -615,7 +622,10 @@ function App() {
             if (e.key === "Escape") {
                 // 0. Close shortcuts help
                 if (showShortcuts) { setShowShortcuts(false); return; }
-                // 1. Close image preview
+                // 1. Close image preview (ImageOcrViewer intercepts Esc for its
+                // own layered dismissals — multi-select → search → close — via
+                // a capture-phase listener, so by the time it reaches here the
+                // viewer is ready to be torn down).
                 if (previewImage) { setPreviewImage(null); setOcrData(null); return; }
                 // 2. Close settings modal
                 if (isSettingsOpen) { setIsSettingsOpen(false); return; }
@@ -648,6 +658,8 @@ function App() {
 
             // Unified Ctrl+C handling
             if ((e.ctrlKey || e.metaKey) && (e.code === "KeyC" || e.key.toLowerCase() === "c")) {
+                // Viewer intercepts Ctrl+C in capture phase when a multi-select
+                // exists; by the time we see it here, nothing in-viewer owns it.
                 const selection = window.getSelection();
                 const selectedText = selection ? selection.toString() : "";
 
@@ -924,13 +936,20 @@ function App() {
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setPreviewImage(clip.content);
+                                setOcrLoading(true);
+                                const t0 = performance.now();
                                 invoke("perform_ocr", { id: clip.id, path: clip.content })
-                                    .then((res) => setOcrData(res as OcrResult))
+                                    .then((res) => {
+                                        const r = res as OcrResult;
+                                        console.log(`[OCR] ${(performance.now() - t0).toFixed(0)}ms · ${r.lines.length} lines · ${r.text.length} chars`);
+                                        setOcrData(r);
+                                    })
                                     .catch((err) => {
                                         console.error("AI 识别错误:", err);
                                         setOcrData(null);
                                         setPreviewImage(null);
-                                    });
+                                    })
+                                    .finally(() => setOcrLoading(false));
                             }}
                             className="bg-indigo-600/90 hover:bg-indigo-500 text-white p-1.5 rounded-md flex items-center gap-1 text-xs backdrop-blur-md shadow-lg"
                         >
@@ -1733,63 +1752,32 @@ function App() {
                 </div>
             </div>
 
-            {/* Image Preview Modal */}
+            {/* Image Preview Modal — backed by the shared ImageOcrViewer */}
             {
                 previewImage && (
                     <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-4 selection:bg-indigo-500/40"
+                        className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md selection:bg-indigo-500/40"
                         onClick={() => { setPreviewImage(null); setOcrData(null); }}
                     >
-                        <div className="relative max-w-full max-h-screen flex flex-col items-center gap-6 overflow-y-auto no-scrollbar py-10"
-                             onClick={(e) => e.stopPropagation()}>
-                            
-                            {/* Image Container with Visual OCR Overlay */}
-                            <div className="relative flex-shrink-0 select-none" style={{ userSelect: "none" }}>
-                                <img
-                                    ref={previewImgRef}
-                                    src={previewImage ? convertFileSrc(previewImage) : ""}
-                                    className="max-w-full max-h-[70vh] rounded-lg shadow-2xl object-contain pointer-events-none select-none"
-                                />
-                                <OCRLayer
-                                    ocrData={ocrData || { lines: [], text: "" }}
-                                    imgRef={previewImgRef}
-                                />
-                            </div>
-
-                            {/* Simplified OCR Actions (Below Image) */}
-                            {ocrData && (
-                                <div className="w-full flex items-center justify-center mt-2 animate-in fade-in slide-in-from-top-4 duration-500">
-                                    <div className="bg-[var(--panel-bg)]/80 border border-[var(--border-color)] rounded-full px-4 py-2 backdrop-blur-xl shadow-2xl flex items-center gap-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                                            <span className="text-xs font-bold text-[var(--text-main)]">{t('preview.ocr_done')}</span>
-                                        </div>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleCopy({ content: ocrData.text, type: "text" } as Clip);
-                                            }}
-                                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-1.5"
-                                        >
-                                            <Copy size={12} /> {t('preview.copy_all_ocr')}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="mt-4 bg-black/50 text-[var(--text-dim)] text-[10px] px-4 py-1.5 rounded-full border border-white/5 backdrop-blur-md font-medium tracking-tight">
-                                {t('preview.exit_hint')}
-                            </div>
+                        <div className="absolute inset-0" onClick={(e) => e.stopPropagation()}>
+                            <ImageOcrViewer
+                                imageSrc={convertFileSrc(previewImage)}
+                                ocrData={ocrData}
+                                isOcrLoading={ocrLoading}
+                                onRequestOcr={() => {
+                                    const clip = clips.find(c => c.content === previewImage);
+                                    if (!clip) return;
+                                    setOcrLoading(true);
+                                    const t0 = performance.now();
+                                    invoke<OcrResult>("perform_ocr", { id: clip.id, path: clip.content })
+                                        .then((r) => { console.log(`[OCR] ${(performance.now()-t0).toFixed(0)}ms · ${r.lines.length} lines · ${r.text.length} chars`); setOcrData(r); })
+                                        .catch((err) => { console.error("AI 识别错误:", err); setOcrData(null); })
+                                        .finally(() => setOcrLoading(false));
+                                }}
+                                onCopy={(text: string) => handleCopy({ content: text, type: "text" } as Clip)}
+                                onClose={() => { setPreviewImage(null); setOcrData(null); }}
+                            />
                         </div>
-
-                        <button
-                            onClick={() => { setPreviewImage(null); setOcrData(null); }}
-                            className="absolute top-6 right-6 bg-white/5 hover:bg-white/10 text-white rounded-full p-2.5 border border-white/10 backdrop-blur-xl transition-all hover:rotate-90"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
                     </div>
                 )
             }
@@ -2014,10 +2002,12 @@ function App() {
             {/* First-launch onboarding */}
             {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
 
-            {/* Global Copy Toast */}
+            {/* Global Copy Toast — opaque bg so the "已复制到剪贴板" label
+             * stays crisp over any content behind. Uses --panel-bg-solid
+             * (a theme-aware fully-opaque twin of --panel-bg). */}
             {copyFeedback && (
                 <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[200] pointer-events-none animate-scale-in">
-                    <div className="bg-[var(--panel-bg)]/95 backdrop-blur-xl border border-indigo-500/30 rounded-2xl px-6 py-4 shadow-2xl shadow-indigo-500/20 flex items-center gap-3">
+                    <div className="bg-[var(--panel-bg-solid)] border border-indigo-500/30 rounded-2xl px-6 py-4 shadow-2xl shadow-indigo-500/25 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
                             <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" className="animate-[dash_0.3s_ease-out_forwards]" style={{ strokeDasharray: 20, strokeDashoffset: 20, animation: 'dash 0.3s ease-out 0.1s forwards' }} />

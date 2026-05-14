@@ -131,13 +131,19 @@ pub fn perform_ocr(app_handle: tauri::AppHandle, db: tauri::State<DbState>, id: 
         let safe_path = validate_image_path(&path)?;
 
         let conn = db.0.lock().unwrap();
-        // Check DB cache
+        // Check DB cache — but ONLY honour it if the cached entry has real
+        // lines. Earlier versions stored empty-lines results (e.g. when the
+        // Windows fallback was used or when the new engine exported under a
+        // different op name), which would otherwise pin us at "0 lines"
+        // forever without ever invoking the actual model again.
         if let Ok(Some(clip)) = database::get_clip_by_id(&conn, id) {
             if let Some(ocr_json) = &clip.ocr_lines {
                 if !ocr_json.is_empty() {
                     let lines: Vec<ocr::OcrLine> = serde_json::from_str(ocr_json).unwrap_or_default();
-                    let text = clip.ocr_text.clone().unwrap_or_default();
-                    return Ok(ocr::OcrResult { text, lines });
+                    if !lines.is_empty() {
+                        let text = clip.ocr_text.clone().unwrap_or_default();
+                        return Ok(ocr::OcrResult { text, lines });
+                    }
                 }
             }
         }
@@ -698,18 +704,28 @@ pub fn user_prompt_decision(app_handle: tauri::AppHandle, db: tauri::State<DbSta
             let conn = db.0.lock().unwrap();
             let _ = database::set_setting(&conn, "always_intercept_clip", "always");
             if let Some((content, kind, source, html)) = pending {
-                if database::insert_clip(&conn, content, kind, source, html).is_ok() {
+                let preload_path: Option<std::path::PathBuf> =
+                    if kind == "image" { Some(std::path::PathBuf::from(&content)) } else { None };
+                if let Ok(id) = database::insert_clip(&conn, content, kind, source, html) {
                     drop(conn);
                     let _ = app_handle.emit_all("clip:created", ());
+                    if let Some(p) = preload_path {
+                        crate::ocr_preload::enqueue(id, p);
+                    }
                 }
             }
         }
         "once" => {
             if let Some((content, kind, source, html)) = pending {
+                let preload_path: Option<std::path::PathBuf> =
+                    if kind == "image" { Some(std::path::PathBuf::from(&content)) } else { None };
                 let conn = db.0.lock().unwrap();
-                if database::insert_clip(&conn, content, kind, source, html).is_ok() {
+                if let Ok(id) = database::insert_clip(&conn, content, kind, source, html) {
                     drop(conn);
                     let _ = app_handle.emit_all("clip:created", ());
+                    if let Some(p) = preload_path {
+                        crate::ocr_preload::enqueue(id, p);
+                    }
                 }
             }
         }

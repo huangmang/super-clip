@@ -2,6 +2,59 @@
 
 所有对 Super Clip 的重大功能改进和 Bug 修复都会记录在此。
 
+## [0.7.0] - 2026-05-14
+
+### OCR 引擎升级
+
+- **PP-OCRv4 server → PP-OCRv5 server** — det 113 MB → 84 MB / rec 90 MB → 80 MB（净省 40 MB），dict 6622 → 18383 字符（中英日繁体 + 拼音 + 更多符号）。RapidOCR ONNX 镜像，SHA256 校验。
+- **rec 动态宽度** — v4 时代固定 W=320 把任何宽高比 >6.7:1 的行强压成 320×48，长邮箱 / URL / 中英长句基本失效。v5 rec 输入 W 是 dynamic dim，按 native 纵横比缩放到 H=48 + 8 倍数对齐。实测："Email: alice@example.com / Tel: 021-88881234" 从 `Eal`(0.641) → 完整(0.989)。
+- **rec batched → per-line forward** — 不同宽度无法 stack 成 batch，每行独立 `session.run`；用 dynamic W 换准确率，per-line 开销在 warm session 下可接受。
+- **fetch_name_0 输出名兼容** — v5 ONNX 输出节点重命名，加进 fallback 链表前优先匹配。
+- **小图 upsample** — Windows OCR fallback 路径 <800px 时 2× Lanczos3 放大，挽回 UI 细字。
+
+### OCR 性能
+
+- **后台预加载** — 新增 `ocr_preload` 模块（单 worker + bounded VecDeque 容量 4 + Condvar 唤醒）。剪贴板进图后 `clipboard_monitor::handle_new_clip` 和 `commands::user_prompt_decision` 立即 enqueue；worker 跑 `recognize_text_local` 写入 `clips.ocr_lines`。用户后续点击图片时 `perform_ocr` 直接命中 DB 缓存，**0 延迟出结果**。溢出丢最老（最新粘贴更可能被打开），同 clip_id 自动去重，cache double-check 防重跑。完成后 emit `ocr:preloaded` 事件。
+- **ORT GraphOptimizationLevel::Level3** — 之前用默认（Level1）。开启常量折叠 + op fusion + layout 传播，稳态推理 20-30% off。
+- **Dummy warmup pass** — `LocalOcrEngine::warmup()` 在 `warm_start` 后跑一轮 `det(1,3,64,64)` + `rec(1,3,48,320)` 假输入，把 first-inference 开销（kernel dispatch / arena bootstrap / threadpool init）提前到 app 启动时。实测 0.61s 完成。
+- **冷启动 26.47s → 稳态 3.24s**（5 行截图，warm session）—— 约 8× 加速。
+
+### OCR 交互（视觉系统重构）
+
+- **GlassSurface 设计基元** — 新增 `src/components/GlassSurface.tsx` 暗玻璃 card/pill 两变体 + accent stripe（indigo/emerald/amber）+ `GLASS_TOKENS` 常量导出（渐变底 / blur / hairline ring / topHighlight / 多层 shadow / 入场动画 class）。所有 overlay 单点改造可换肤。
+- **统一 8 处 overlay 视觉** — copy toast / hover tooltip / OCR-done hint / 多选 pill / 搜索框 / 加载指示 / 右键菜单 / smart link chips 全部迁到 GlassSurface。原先 5 套背景 / 3 套 shadow / 不一致动画 → 一套语言。
+- **IconButton 组件 + 工具栏 config 化** — 顶部 7+ 控件改为 `toolbarActions: Action[]` 数组驱动，加按钮 = push 一条记录。5 种 accent 色（indigo/emerald/amber/rose/red），统一 active/disabled/hover 态，`disabled:hover:bg-black/50` 修掉 disabled 按钮 hover 仍变色的小 bug。
+- **新增 ImageOcrViewer 组件** — 把 FloatImage 里 200+ 行图片浮窗逻辑拆出来作为单一来源，FloatImage（独立窗口）和主 App 预览 modal 共享同一个交互组件。
+- **Raycast 风 hover tooltip** — 替换浏览器原生 `title=` 黄色小框：暗玻璃 + 顶部 indigo 渐变条 + 小箭头指向行 + 单行布局（文字左 + 置信度点 + 百分比右）+ 圆角 12px + 多层阴影 + 拖拽选字时自动隐藏避免干扰 + 视图变化时清掉防错位。
+- **复制成功 toast 重做** — 从 `bg-green-500 + text-white`（对比度 2.55，白底图基本看不见）→ 暗玻璃 + emerald 渐变图标球 + 内高光 + 外发光 + 加重 strokeWidth。任意底色 WCAG AAA。
+- **全局 Toast 改不透明** — 新增 `--panel-bg-solid` CSS 变量（暗 #161b22 / 亮 #ffffff），`已复制到剪贴板` toast 不再用半透明 panel-bg/95 + blur，任何底图字都清晰。
+
+### OCR 性能（前端）
+
+- **OCRLayer sortedLines memoize + 预算 bbox** — 之前每次 render 重 spread+Math.min/max × N 行 × 4 维度。现 `useMemo` 一次性算出 `EnrichedLine[]` 含 `{minX, maxX, minY, maxY}` 缓存。marquee 命中测试、line render map、hover anchor 三处统统读 `.bbox`。pan/zoom tick 不触发该计算。
+- **selectionchange rAF 节流** — 拖拽选字时浏览器秒发 60+ 事件，原代码每次 setState。改为 requestAnimationFrame 合并，max 1 次 setState/frame。
+- **rec 长行不再压扁** — 见上「OCR 引擎升级」。
+
+### Bug 修复 / 安全
+
+- **路径校验** — `recognize_text` 安全路径白名单保留，新模块沿用。
+- **预加载 worker 异常隔离** — 失败仅 `eprintln`，DB 状态保持「无 OCR 数据」让用户点击时同步路径兜底。
+- **同 clip 重复 enqueue 去重** — 用户连续粘相同图防止队列堆叠。
+- **空 ocr_lines/`[]` 不视为缓存命中** — 修历史脏数据导致永久卡 0 行的 bug。
+
+### 开发 / 项目
+
+- **`.gitignore` 加 `src-tauri/resources/`** — 165 MB ONNX 模型不入库，README 后续会写从 RapidOCR ModelScope 下载脚本。
+- **smoke_test.py** — Python + onnxruntime 端到端验证脚本（生成中英日测试图、跑 det+rec、对比固定 320 vs 动态宽差异、计时）。本地诊断用。
+
+### 非功能性
+
+- 改动跨 ~13 文件 / +1500 / -380 行
+- 8 个 overlay 视觉迁到统一基元
+- 顶部工具栏 100+ 行重复 JSX → 配置数组驱动 + IconButton
+
+---
+
 ## [0.6.0] - 2026-05-08
 
 ### Bug 修复

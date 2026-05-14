@@ -8,7 +8,7 @@
     },
     "package": {
         "productName": "super-clip",
-        "version": "0.6.0"
+        "version": "0.7.0"
     },
     "tauri": {
         "allowlist": {
@@ -64,7 +64,11 @@
                 "providerShortName": null,
                 "signingIdentity": null
             },
-            "resources": [],
+            "resources": [
+                "resources/ocr/det.onnx",
+                "resources/ocr/rec.onnx",
+                "resources/ocr/keys.txt"
+            ],
             "shortDescription": "Cross-platform clipboard manager",
             "targets": "all",
             "windows": {
