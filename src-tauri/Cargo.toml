@@ -1,6 +1,6 @@
 [package]
 name = "super-clip"
-version = "0.7.1"
+version = "0.7.2"
 description = "A full-platform clipboard manager"
 authors = ["Your Name"]
 edition = "2021"

@@ -26,6 +26,8 @@ import {
     Minus,
     Moon,
     Sun,
+    BookOpen,
+    SunMoon,
     ChevronUp,
     ChevronDown
 } from "lucide-react";
@@ -239,21 +241,26 @@ function App() {
     const wasDraggingSegmentsRef = useRef(false);
     const segmentDragStartIdx = useRef<number | null>(null);
     const segmentDragActiveId = useRef<number | null>(null);
-    // `themePref` is the user's preference: dark / light / auto (auto = follow OS).
-    // `theme` is the resolved value used for rendering ("dark" or "light"); when
-    // pref is auto we recompute it from `prefers-color-scheme` and react to OS changes.
-    const [themePref, setThemePref] = useState<'dark' | 'light' | 'auto'>('dark');
-    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+    // `themePref` is the user's preference: dark / light / soft / auto.
+    //   - dark   : default Hit-App graphite palette
+    //   - light  : standard slate-50 + pure white surfaces (high contrast)
+    //   - soft   : warm cream / paper — easier on the eyes for long sessions
+    //   - auto   : follow OS prefers-color-scheme (resolves to dark or light;
+    //              soft is opt-in only, auto never resolves to it)
+    // `theme` is the resolved value used for rendering. When pref is `auto`
+    // we recompute from `prefers-color-scheme` and react to OS changes.
+    const [themePref, setThemePref] = useState<'dark' | 'light' | 'soft' | 'auto'>('dark');
+    const [theme, setTheme] = useState<'dark' | 'light' | 'soft'>('dark');
     const [entities, setEntities] = useState<{ entity_type: string; value: string; display: string }[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
 
-    const applyTheme = (resolved: 'dark' | 'light') => {
+    const applyTheme = (resolved: 'dark' | 'light' | 'soft') => {
         setTheme(resolved);
-        if (resolved === 'light') {
-            document.documentElement.classList.add("light");
-        } else {
-            document.documentElement.classList.remove("light");
-        }
+        // Always reset both theme classes first so swapping back to dark
+        // (no class) cleanly drops whichever variant was active.
+        document.documentElement.classList.remove("light", "soft");
+        if (resolved === 'light') document.documentElement.classList.add("light");
+        else if (resolved === 'soft') document.documentElement.classList.add("soft");
     };
 
     // Load theme preference, resolve, and subscribe to OS change when on `auto`.
@@ -261,7 +268,7 @@ function App() {
         const initTheme = async () => {
             const saved = localStorage.getItem("theme");
             const dbTheme = await invoke("get_setting", { key: "theme" }).catch(() => null);
-            const pref = ((dbTheme || saved || 'dark') as 'dark' | 'light' | 'auto');
+            const pref = ((dbTheme || saved || 'dark') as 'dark' | 'light' | 'soft' | 'auto');
             setThemePref(pref);
             if (pref === 'auto') {
                 const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -340,10 +347,11 @@ function App() {
     }, []);
 
     const toggleTheme = () => {
-        // Cycle: dark → light → auto → dark
-        const nextPref: 'dark' | 'light' | 'auto' =
+        // Cycle: dark → light → soft → auto → dark
+        const nextPref: 'dark' | 'light' | 'soft' | 'auto' =
             themePref === 'dark' ? 'light' :
-            themePref === 'light' ? 'auto' : 'dark';
+            themePref === 'light' ? 'soft' :
+            themePref === 'soft' ? 'auto' : 'dark';
         setThemePref(nextPref);
         if (nextPref === 'auto') {
             const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -991,7 +999,7 @@ function App() {
 
                         <LazyCodeBlock
                             language={detectedLang}
-                            theme={theme}
+                            theme={theme === 'soft' ? 'light' : theme}
                             code={clip.content.length > 2000 ? clip.content.slice(0, 2000) + "\n... (truncated for preview)" : clip.content}
                         />
                     </div>
@@ -1230,7 +1238,13 @@ function App() {
                         onClick={toggleTheme}
                         className="h-full px-3 text-gray-500 hover:text-indigo-400 hover:bg-[var(--panel-hover)] transition-all outline-none border-none cursor-pointer bg-transparent"
                     >
-                        {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                        {/* Icon reflects the *current* preference so user can
+                         * tell soft from light at a glance. Cycle order:
+                         *   dark (Sun) → light (Moon) → soft (BookOpen) → auto (SunMoon) */}
+                        {themePref === 'dark' ? <Sun size={14} /> :
+                         themePref === 'light' ? <Moon size={14} /> :
+                         themePref === 'soft' ? <BookOpen size={14} /> :
+                         <SunMoon size={14} />}
                     </button>
                     <button 
                         onClick={() => appWindow.minimize()}
@@ -1945,7 +1959,7 @@ function App() {
                     onExit={() => setIsMinimalist(false)}
                     fileCategory={fileCategory}
                     setFileCategory={setFileCategory}
-                    theme={theme}
+                    theme={theme === 'soft' ? 'light' : theme}
                     everythingStatus={everythingStatus}
                 />
             )}

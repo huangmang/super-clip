@@ -2,6 +2,31 @@
 
 所有对 Super Clip 的重大功能改进和 Bug 修复都会记录在此。
 
+## [0.7.2] - 2026-05-14
+
+### 主题
+
+- **新增 soft 暖色主题** —— 长时间用眼不刺眼的纸感配色：bg `#f5efe6`（暖米白）/ 卡片 `#fbf7ef` / 文字 `#443a30`（暖深棕墨色非纯黑）/ 副字 `#847868`，accent 保留 brand indigo。灵感来自 Kindle E-Ink sepia + Solarized Light，但去掉了发黄色调留中性暖。
+- **主题循环 dark → light → soft → auto → dark** —— 之前只有 3 档，加入 soft 占第 3 位。auto 仅解析为 dark/light（OS 无 soft 信号），soft 只能手动切。
+- **顶栏切换图标 4 态化** —— Sun(dark) / Moon(light) / **BookOpen(soft)** / SunMoon(auto)，一眼分得清当前 pref。
+- 新增 CSS 变量 `--panel-bg-solid`（暗 `#161b22` / 亮 `#ffffff`）保留 v0.7.1 给"已复制到剪贴板"toast 用的不透明对应物。
+
+### OCR 截图预览体验
+
+- **常驻底部胶囊**（替换原 OCR-done 一次性提示）：左侧「一键复制全部」indigo CTA + 右侧 kbd-style 操作提示「`Ctrl` 多选 · `Alt` 框选」。kbd 用 `bg-white/8 + border-white/10 + font-mono` 小药丸做 Linear/Discord 风格，verb muted。窄屏（<sm）自动隐藏键盘提示防溢出。
+- **胶囊 letterbox-aware 定位** —— 之前固定 `bottom: 24`，对长截图（图片远不到视口底）会浮在大片空白中显得脱节。改为 ResizeObserver 计算 `object-contain` letterbox 数学，实时算图片底边 Y：
+  - 下方 letterbox 空间 ≥ 胶囊高+24 → 完全停在**图片下方** 12px 处（**不挡画面**）
+  - 半空间 → 紧贴图片底边略往下偏
+  - 拉伸模式/视口铺满图片 → 兜底贴视口底
+- **同步多选 pill 定位** —— 「已选 N 行 · Ctrl+C 复制」用同一 `capsuleTopY`，进入/退出多选时两个 pill 在完全相同的 Y 上无缝切换，无跳变。
+
+### Bug 修复
+
+- **GlassSurface 定位冲突** —— GlassSurface 内部硬写 `className="relative overflow-hidden"`，外面如果传 `absolute bottom-X` 进来，Tailwind CSS 中 `.relative` 在 `.absolute` 之后输出导致 source-order 胜出 → 整个胶囊变成 `position: relative` 走文档流，跑到容器最顶部。修法：所有定位 GlassSurface 用例外面套一个定位 div，GlassSurface 自身只管视觉。
+- **删掉 multi-select 按钮残留** —— 中间方案的 [多选模式] 切换按钮被产品否决，连带 `multiSelectMode` state、reset useEffect、传给 OCRLayer 的 prop、`CheckSquare` 图标、`preview.multi_select_mode` i18n key 全清。
+
+---
+
 ## [0.7.1] - 2026-05-14
 
 ### OCR 性能（即时识别）

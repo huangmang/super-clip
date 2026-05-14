@@ -44,6 +44,10 @@ interface OCRLayerProps {
     viewScale?: number;
     viewTx?: number;
     viewTy?: number;
+    // When true, plain clicks toggle multi-select instead of copy. Lets the
+    // bottom action-bar drive multi-select without forcing users to learn
+    // the Ctrl+click shortcut.
+    multiSelectMode?: boolean;
 }
 
 // Keep font family stable across canvas measurement and DOM rendering so
@@ -66,7 +70,7 @@ const measureTextWidth = (text: string, fontSize: number): number => {
 
 type Marquee = { startX: number; startY: number; curX: number; curY: number };
 
-export const OCRLayer = ({ ocrData, imgRef, isStretched, onCopyLine, onCopyRegion, onMultiSelectChange, clearMultiSelectToken, showConfidenceHeatmap, searchHighlights, viewScale = 1, viewTx = 0, viewTy = 0 }: OCRLayerProps) => {
+export const OCRLayer = ({ ocrData, imgRef, isStretched, onCopyLine, onCopyRegion, onMultiSelectChange, clearMultiSelectToken, showConfidenceHeatmap, searchHighlights, viewScale = 1, viewTx = 0, viewTy = 0, multiSelectMode = false }: OCRLayerProps) => {
     const layerRef = useRef<HTMLDivElement>(null);
     const [scale, setScale] = useState({ x: 1, y: 1 });
     const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -277,9 +281,12 @@ export const OCRLayer = ({ ocrData, imgRef, isStretched, onCopyLine, onCopyRegio
     const handleLineClick = (e: React.MouseEvent<HTMLDivElement>, line: OcrLine, lineIdx: number) => {
         if (e.altKey) return;
 
-        // Ctrl/Cmd+click → toggle this line in the persistent multi-select set.
-        // No auto-copy, no native text range — parent handles Ctrl+C.
-        if (e.ctrlKey || e.metaKey) {
+        // Multi-select trigger: explicit Ctrl/Cmd+click *or* the persistent
+        // multi-select-mode toggle from the bottom action bar. The latter
+        // lets users without keyboard fluency build a multi-line selection
+        // by simply tapping each line.
+        const wantsMultiToggle = e.ctrlKey || e.metaKey || multiSelectMode;
+        if (wantsMultiToggle) {
             e.preventDefault();
             e.stopPropagation();
             if (clickTimer.current != null) {

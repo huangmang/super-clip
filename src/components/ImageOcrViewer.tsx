@@ -49,7 +49,6 @@ export function ImageOcrViewer(props: ImageOcrViewerProps) {
     const [view, setView] = useState<ViewTransform>(IDENTITY_VIEW);
     const [multiSelected, setMultiSelected] = useState<OcrLine[]>([]);
     const [clearMultiToken, setClearMultiToken] = useState(0);
-    const [hintDismissed, setHintDismissed] = useState(false);
     const [showHeatmap, setShowHeatmap] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
@@ -65,9 +64,73 @@ export function ImageOcrViewer(props: ImageOcrViewerProps) {
     const multiSelectedRef = useRef<OcrLine[]>([]);
 
     useEffect(() => { multiSelectedRef.current = multiSelected; }, [multiSelected]);
-    useEffect(() => { setHintDismissed(false); }, [ocrData]);
-    // Reset search when OCR data changes
+    // Fresh image → fresh interaction state, no search stickiness.
     useEffect(() => { setSearchQuery(""); setSearchOpen(false); setSearchCurrent(0); }, [ocrData]);
+
+    // Compute the action-bar's anchor Y so it sits *below* the screenshot
+    // when letterbox space allows, and only overlaps the image as a last
+    // resort. `capsuleTopY` is the resolved top in root-px.
+    const [capsuleTopY, setCapsuleTopY] = useState<number | null>(null);
+    useEffect(() => {
+        const CAPSULE_H = 40;        // pill height incl. padding
+        const BELOW_GAP = 12;        // breathing room between image edge and pill top
+        const OVERLAP_FALLBACK = 8;  // tiny lift when forced to overlap
+
+        const compute = () => {
+            const img = imgRef.current;
+            const root = rootRef.current;
+            if (!img || !root) return;
+            const { naturalWidth, naturalHeight } = img;
+            if (!naturalWidth || !naturalHeight) return;
+            const cw = root.clientWidth;
+            const ch = root.clientHeight;
+            if (!cw || !ch) return;
+
+            // 1. image bottom Y (object-contain math; stretched fills viewport)
+            let bottomY: number;
+            if (isStretched) {
+                bottomY = ch;
+            } else {
+                const naturalRatio = naturalWidth / naturalHeight;
+                const containerRatio = cw / ch;
+                const renderH = naturalRatio > containerRatio ? cw / naturalRatio : ch;
+                const offsetY = naturalRatio > containerRatio ? (ch - renderH) / 2 : 0;
+                bottomY = offsetY + renderH;
+            }
+
+            // 2. pill top Y — try to dock BELOW the image first.
+            const spaceBelow = ch - bottomY;
+            let pillTop: number;
+            if (spaceBelow >= CAPSULE_H + BELOW_GAP * 2) {
+                // Letterbox / stretched-out viewport: place fully below
+                // the screenshot frame.
+                pillTop = bottomY + BELOW_GAP;
+            } else if (spaceBelow >= CAPSULE_H / 2) {
+                // Half space available — push below the edge but tighter.
+                pillTop = bottomY + Math.max(4, spaceBelow - CAPSULE_H);
+            } else {
+                // No space below: overlap the image's bottom by minimum
+                // amount possible (the user explicitly asked us not to
+                // cover the image, but stretching past the viewport would
+                // hide the pill entirely; this is the least-bad fallback).
+                pillTop = ch - CAPSULE_H - OVERLAP_FALLBACK;
+            }
+            setCapsuleTopY(pillTop);
+        };
+
+        compute();
+        const ro = new ResizeObserver(compute);
+        if (rootRef.current) ro.observe(rootRef.current);
+        const img = imgRef.current;
+        if (img) {
+            if (img.complete) compute();
+            img.addEventListener("load", compute);
+        }
+        return () => {
+            ro.disconnect();
+            if (img) img.removeEventListener("load", compute);
+        };
+    }, [imageSrc, isStretched]);
 
     const showToast = () => { setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); };
 
@@ -436,48 +499,77 @@ export function ImageOcrViewer(props: ImageOcrViewerProps) {
                 </GlassSurface>
             )}
 
-            {/* OCR-done hint (suppressed while multi-select active) */}
-            {ocrData && ocrData.lines.length > 0 && !hintDismissed && multiSelected.length === 0 && !searchOpen && (
+            {/* Persistent bottom action bar — gives every OCR session
+             * one-tap access to "copy all" and "multi-select mode", so
+             * users don't have to learn the Ctrl+click multi-select
+             * shortcut. Hidden while: actively typing in search, OR a
+             * multi-select group is already showing its own action pill
+             * just below (avoids two pills stacking on the same Y axis). */}
+            {ocrData && ocrData.lines.length > 0 && multiSelected.length === 0 && !searchOpen && (
+                // Anchor to the IMAGE's bottom edge (letterbox-aware), not
+                // the modal floor — keeps the pill visually attached to the
+                // screenshot frame even when the image is shorter than the
+                // viewport. `imageBottomY` is recomputed on resize / load.
+                // Outer wrapper owns positioning; GlassSurface stays purely
+                // visual (its hardcoded `relative` would otherwise lose to
+                // an `absolute` we put on it under Tailwind's CSS ordering).
+                <div
+                    className="absolute left-1/2 -translate-x-1/2 z-30 pointer-events-auto"
+                    style={{
+                        // `capsuleTopY` resolves to letterbox-below when
+                        // possible, else minimal overlap. Computed in the
+                        // useEffect above. Falls back to viewport-anchored
+                        // before first measurement.
+                        top: capsuleTopY != null ? `${capsuleTopY}px` : undefined,
+                        bottom: capsuleTopY == null ? 16 : undefined,
+                    }}
+                >
                 <GlassSurface
                     variant="pill"
                     animate
-                    className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 slide-in-from-bottom-2 pointer-events-auto max-w-[92%]"
+                    className="slide-in-from-bottom-2"
                 >
-                    <div className="flex items-center gap-2.5 pl-1 pr-1.5 py-1 text-sm" onClick={(e) => e.stopPropagation()}>
-                        <span
-                            className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                            style={{
-                                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                                boxShadow: "0 0 0 1px rgba(255,255,255,0.18) inset, 0 0 10px rgba(16,185,129,0.45)",
-                            }}
+                    <div className="flex items-center gap-2.5 pl-1 pr-3.5 py-1 text-sm" onClick={(e) => e.stopPropagation()}>
+                        {/* Copy-all action */}
+                        <button
+                            onClick={() => { if (ocrData.text) doCopy(reconstructParagraphs(ocrData.lines) || ocrData.text); }}
+                            className="px-3.5 py-1.5 rounded-full bg-indigo-500 hover:bg-indigo-400 active:bg-indigo-600 transition-colors font-medium flex items-center gap-2 text-white text-[12.5px]"
                         >
-                            <Check size={14} strokeWidth={3.2} className="text-white" />
+                            <Copy size={13} /> {t("preview.copy_all_ocr")}
+                        </button>
+                        {/* Inline keyboard-hint row — Linear/Discord styling
+                         * for keyboard-shortcut affordances. Tiny `kbd` pills
+                         * make the keys feel tactile without shouting; the
+                         * verbs in muted body text. Replaces the previous
+                         * separate toggle button. */}
+                        <span className="hidden sm:flex items-center gap-1 text-[11px] text-white/55 whitespace-nowrap select-none">
+                            <kbd className="px-1.5 py-0.5 rounded-md bg-white/8 text-white/85 text-[10px] font-mono leading-none border border-white/10">Ctrl</kbd>
+                            <span className="opacity-90">多选</span>
+                            <span className="mx-1 text-white/25">·</span>
+                            <kbd className="px-1.5 py-0.5 rounded-md bg-white/8 text-white/85 text-[10px] font-mono leading-none border border-white/10">Alt</kbd>
+                            <span className="opacity-90">框选</span>
                         </span>
-                        <span className="font-medium whitespace-nowrap text-white/95">{t("preview.ocr_done")}</span>
-                        <button
-                            onClick={() => { if (ocrData.text) { doCopy(reconstructParagraphs(ocrData.lines) || ocrData.text); setHintDismissed(true); } }}
-                            className="ml-1 px-3 py-1 rounded-full bg-indigo-500 hover:bg-indigo-400 active:bg-indigo-600 transition-colors font-semibold flex items-center gap-1.5 flex-shrink-0 text-white text-[12.5px]"
-                        >
-                            <Copy size={12} /> {t("preview.copy_all_ocr")}
-                        </button>
-                        <button
-                            onClick={() => setHintDismissed(true)}
-                            aria-label="dismiss"
-                            className="w-7 h-7 rounded-full hover:bg-white/15 active:bg-white/20 transition-colors flex items-center justify-center flex-shrink-0 text-white/80"
-                        >
-                            <X size={13} />
-                        </button>
                     </div>
                 </GlassSurface>
+                </div>
             )}
 
-            {/* Multi-select pill */}
+            {/* Multi-select pill — uses the same `capsuleTopY` anchor as
+             * the action bar above so the two pills swap in/out at the
+             * exact same Y position (no jitter on transition). */}
             {multiSelected.length > 0 && !searchOpen && (
+                <div
+                    className="absolute left-1/2 -translate-x-1/2 z-30 pointer-events-auto"
+                    style={{
+                        top: capsuleTopY != null ? `${capsuleTopY}px` : undefined,
+                        bottom: capsuleTopY == null ? 16 : undefined,
+                    }}
+                >
                 <GlassSurface
                     variant="pill"
                     accent="indigo"
                     animate
-                    className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 slide-in-from-bottom-2 pointer-events-auto"
+                    className="slide-in-from-bottom-2"
                 >
                     <div className="flex items-center gap-2 pl-3.5 pr-1.5 py-1 text-sm" onClick={(e) => e.stopPropagation()}>
                         <span
@@ -502,6 +594,7 @@ export function ImageOcrViewer(props: ImageOcrViewerProps) {
                         </button>
                     </div>
                 </GlassSurface>
+                </div>
             )}
 
             {/* Smart links — small chips; lightweight individual buttons

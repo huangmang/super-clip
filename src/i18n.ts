@@ -85,6 +85,7 @@ const translations: Record<string, Record<Locale, string>> = {
     'preview.file_badge': { zh: '文件 · 点击放大', en: 'File · Click to enlarge' },
     'preview.ocr_done': { zh: '提取完成：图上拖选文字 · Ctrl+左键 多选行', en: 'Done · drag to select · Ctrl+click for multi-row' },
     'preview.copy_all_ocr': { zh: '一键复制全部', en: 'Copy all text' },
+    'preview.multi_select_hint': { zh: 'Ctrl+点击 多选 · Alt+拖拽 框选', en: 'Ctrl+click to multi-select · Alt+drag to box-select' },
     'preview.multi_selected': { zh: '已选 {n} 行 · Ctrl+C 复制', en: '{n} lines selected · Ctrl+C to copy' },
     'preview.exit_hint': { zh: '按 ESC 或点击背景退出', en: 'Press ESC or click backdrop to exit' },
 

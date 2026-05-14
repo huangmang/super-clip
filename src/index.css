@@ -45,6 +45,29 @@
   --tray-bg: rgba(255, 255, 255, 0.8);
 }
 
+/* "Soft" / paper theme — warm cream palette tuned for long reading
+ * sessions. Ditches pure-white surfaces (which spike retinal contrast
+ * vs. typical room lighting and tire the eyes within minutes) in favor
+ * of an aged-paper bg with warm-brown ink-style text. Brand indigo
+ * accent stays so primary CTAs feel familiar. Inspired by Kindle/E-Ink
+ * sepia and Solarized-Light, but kept neutral-warm rather than yellow. */
+:root.soft {
+  --bg-color: #f5efe6;
+  --panel-bg: rgba(251, 247, 239, 0.7);
+  --panel-bg-solid: #fbf7ef;
+  --header-bg: rgba(238, 230, 217, 0.85);
+  --input-bg: rgba(253, 248, 240, 0.6);
+  --border-color: rgba(101, 79, 50, 0.08);
+  --panel-hover: rgba(180, 140, 90, 0.06);
+  --text-main: #443a30;
+  --text-dim: #847868;
+  --accent-color: #4f46e5;
+  --accent-light: #6366f1;
+  --tray-bg: rgba(245, 239, 230, 0.85);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(140, 110, 70, 0.3);
+}
+
 * {
   /* Force crisp rendering on high-DPI displays */
   -webkit-backface-visibility: hidden;
