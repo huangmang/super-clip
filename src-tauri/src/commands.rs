@@ -123,39 +123,54 @@ fn validate_image_path(path: &str) -> Result<std::path::PathBuf, String> {
 
 // ── OCR ──
 
+/// `async` + `spawn_blocking` so the multi-second OCR inference runs on a
+/// dedicated blocking thread, not on a Tauri command-runtime worker. Without
+/// this the front-end's other invokes (window resize, clip list refresh,
+/// clipboard event subscribers) get queued behind the OCR call and the UI
+/// stutters / appears frozen for the duration.
 #[tauri::command]
-pub fn perform_ocr(app_handle: tauri::AppHandle, db: tauri::State<DbState>, id: i64, path: String) -> Result<ocr::OcrResult, String> {
+pub async fn perform_ocr(app_handle: tauri::AppHandle, id: i64, path: String) -> Result<ocr::OcrResult, String> {
     #[cfg(target_os = "windows")]
     {
-        // Reject obviously malicious paths before touching the disk.
+        // Path validation is cheap; do it on the calling thread so a bad
+        // path errors out immediately without spawning a worker.
         let safe_path = validate_image_path(&path)?;
+        let safe_path_str = safe_path.to_string_lossy().to_string();
 
-        let conn = db.0.lock().unwrap();
-        // Check DB cache — but ONLY honour it if the cached entry has real
-        // lines. Earlier versions stored empty-lines results (e.g. when the
-        // Windows fallback was used or when the new engine exported under a
-        // different op name), which would otherwise pin us at "0 lines"
-        // forever without ever invoking the actual model again.
-        if let Ok(Some(clip)) = database::get_clip_by_id(&conn, id) {
-            if let Some(ocr_json) = &clip.ocr_lines {
-                if !ocr_json.is_empty() {
-                    let lines: Vec<ocr::OcrLine> = serde_json::from_str(ocr_json).unwrap_or_default();
-                    if !lines.is_empty() {
-                        let text = clip.ocr_text.clone().unwrap_or_default();
-                        return Ok(ocr::OcrResult { text, lines });
+        // Resolve DB state via app_handle inside the blocking task so we
+        // don't carry `tauri::State` (not Send) across an `.await`.
+        let app = app_handle.clone();
+        tauri::async_runtime::spawn_blocking(move || -> Result<ocr::OcrResult, String> {
+            let state = app.state::<DbState>();
+
+            // Cache lookup: cheap, do it before kicking the model off.
+            {
+                let conn = state.0.lock().map_err(|e| e.to_string())?;
+                if let Ok(Some(clip)) = database::get_clip_by_id(&conn, id) {
+                    if let Some(ocr_json) = &clip.ocr_lines {
+                        if !ocr_json.is_empty() {
+                            let lines: Vec<ocr::OcrLine> = serde_json::from_str(ocr_json).unwrap_or_default();
+                            if !lines.is_empty() {
+                                let text = clip.ocr_text.clone().unwrap_or_default();
+                                return Ok(ocr::OcrResult { text, lines });
+                            }
+                        }
                     }
                 }
             }
-        }
-        drop(conn);
 
-        let result = ocr::recognize_text_local(&app_handle, &safe_path.to_string_lossy())?;
+            let result = ocr::recognize_text_local(&app, &safe_path_str)?;
 
-        let conn = db.0.lock().unwrap();
-        let lines_json = serde_json::to_string(&result.lines).map_err(|e| e.to_string())?;
-        let _ = database::update_clip_ocr(&conn, id, result.text.clone(), lines_json);
+            // Persist to cache so subsequent clicks short-circuit.
+            if let Ok(conn) = state.0.lock() {
+                let lines_json = serde_json::to_string(&result.lines).unwrap_or_else(|_| "[]".to_string());
+                let _ = database::update_clip_ocr(&conn, id, result.text.clone(), lines_json);
+            }
 
-        Ok(result)
+            Ok(result)
+        })
+        .await
+        .map_err(|e| format!("OCR task panicked: {}", e))?
     }
     #[cfg(not(target_os = "windows"))]
     {

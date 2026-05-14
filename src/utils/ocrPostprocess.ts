@@ -105,12 +105,73 @@ export const tableToTsv = (rows: string[][]): string =>
     rows.map(r => r.join("\t")).join("\n");
 
 // ── smart link detection ──────────────────────────────────────────────
+// The previous implementation used a single permissive phone regex that
+// fired on any 7-15 digit run with separators. In practice that swept up
+// dates ("2026-05-14"), version numbers ("1.2.3.456"), order IDs, IP
+// addresses, and the like. The rewrite below uses *country-specific*
+// patterns anchored to non-digit boundaries (lookbehind/ahead) plus a
+// post-filter rejecting monotonic / repeated digits, then validates
+// emails for shape (TLD length, no consecutive dots, leading char).
 export type SmartLink = { type: "url" | "email" | "phone"; value: string };
 
 const URL_RE = /https?:\/\/[^\s<>"']+/gi;
-const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-// Rough phone matcher: optional country code, 7-15 digits total with separators.
-const PHONE_RE = /(?:\+?\d{1,3}[-\s.]?)?(?:\(\d{2,4}\)|\d{2,4})[-\s.]?\d{3,4}[-\s.]?\d{3,4}/g;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}/g;
+
+// Phone patterns ordered most-specific → most-general so the first match
+// wins per region. `(?<![\d.\-])` / `(?![\d.\-])` keep matches from
+// landing inside a longer digit/dot/hyphen run (defeats version numbers
+// and IP-like strings). Lookbehind / lookahead are ES2018; WebView2 is
+// modern Chromium so support is universal here.
+const PHONE_PATTERNS: RegExp[] = [
+    // CN mobile (most common): 1[3-9]xxxxxxxxx (11 digits, no separators)
+    /(?<![\d.\-])1[3-9]\d{9}(?![\d.\-])/g,
+    // CN service: 400/800 + 7-8 digits, optional separators
+    /(?<![\d.\-])(?:400|800)[-\s]?\d{3,4}[-\s]?\d{3,4}(?![\d.\-])/g,
+    // CN landline w/ area code: (0xx)yyyy-yyyy / 0xx-yyyy-yyyy
+    /(?<![\d.\-])\(?0\d{2,3}\)?[-\s]\d{4}[-\s]?\d{4}(?![\d.\-])/g,
+    // International (+CC): +xx[-\s]xxxx-xxxx (CC 1-3 digits, total 8-15)
+    /(?<![\d.\-])\+\d{1,3}[-\s]?\d{2,4}[-\s]?\d{3,4}[-\s]?\d{3,4}(?![\d.\-])/g,
+    // NA/US format with mandatory separator: NNN-NNN-NNNN, (NNN) NNN-NNNN
+    /(?<![\d.\-])\(?\d{3}\)?[-\s]\d{3}[-\s]?\d{4}(?![\d.\-])/g,
+];
+
+const isMonotonicOrRepeated = (s: string): boolean => {
+    const digits = s.replace(/\D/g, "");
+    if (digits.length < 7) return true;                 // too short = noise
+    if (/^(\d)\1+$/.test(digits)) return true;          // all same digit
+    let inc = true, dec = true;
+    for (let i = 1; i < digits.length; i++) {
+        const d = digits.charCodeAt(i) - digits.charCodeAt(i - 1);
+        if (d !== 1) inc = false;
+        if (d !== -1) dec = false;
+    }
+    return inc || dec;                                  // 12345678 / 98765432
+};
+
+const isValidEmail = (s: string): boolean => {
+    if (!/^[A-Za-z0-9_+-]/.test(s)) return false;       // local must start with alnum/_/+/-
+    if (/\.\./.test(s)) return false;                   // no consecutive dots
+    if (s.length > 254) return false;                   // RFC 5321 cap
+    const at = s.indexOf("@");
+    if (at < 1 || at > 64) return false;                // local part 1-64
+    const domain = s.slice(at + 1);
+    const tld = domain.split(".").pop() || "";
+    if (tld.length < 2 || tld.length > 24) return false;
+    return true;
+};
+
+const isValidUrl = (s: string): boolean => {
+    // Must have a host with at least one dot AND end-of-host after a TLD-ish
+    // segment. Reject obvious garbage like "https://." or "http://abc".
+    const m = s.match(/^https?:\/\/([^\s\/]+)/i);
+    if (!m) return false;
+    const host = m[1];
+    if (host.length < 4 || host.startsWith(".") || host.endsWith(".")) return false;
+    if (!host.includes(".")) return false;
+    const lastSeg = host.split(".").pop() || "";
+    if (lastSeg.length < 2 || lastSeg.length > 24) return false;
+    return true;
+};
 
 export const extractSmartLinks = (text: string): SmartLink[] => {
     const out: SmartLink[] = [];
@@ -121,11 +182,26 @@ export const extractSmartLinks = (text: string): SmartLink[] => {
         seen.add(type + ":" + v);
         out.push({ type, value: v });
     };
-    for (const m of text.matchAll(URL_RE)) push("url", m[0]);
-    for (const m of text.matchAll(EMAIL_RE)) push("email", m[0]);
-    for (const m of text.matchAll(PHONE_RE)) {
-        const digits = m[0].replace(/\D/g, "");
-        if (digits.length >= 7 && digits.length <= 15) push("phone", m[0]);
+    for (const m of text.matchAll(URL_RE)) {
+        const v = m[0].replace(/[.,;:!?)\]]+$/, "");
+        if (isValidUrl(v)) push("url", v);
+    }
+    for (const m of text.matchAll(EMAIL_RE)) {
+        if (isValidEmail(m[0])) push("email", m[0]);
+    }
+    // Track digit-only signature so the same phone matched by two patterns
+    // (e.g. CN mobile + intl) isn't surfaced twice.
+    const phoneDigitsSeen = new Set<string>();
+    for (const re of PHONE_PATTERNS) {
+        for (const m of text.matchAll(re)) {
+            const matched = m[0];
+            if (isMonotonicOrRepeated(matched)) continue;
+            const digits = matched.replace(/\D/g, "");
+            if (digits.length < 7 || digits.length > 15) continue;
+            if (phoneDigitsSeen.has(digits)) continue;
+            phoneDigitsSeen.add(digits);
+            push("phone", matched);
+        }
     }
     return out;
 };

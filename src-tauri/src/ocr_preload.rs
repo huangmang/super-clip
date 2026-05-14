@@ -65,6 +65,18 @@ pub fn start_worker(app_handle: AppHandle) {
     thread::Builder::new()
         .name("ocr-preload".into())
         .spawn(move || {
+            // Drop OS thread priority so the kernel's scheduler favours
+            // the UI / main-render thread when CPUs are saturated. The
+            // preload's job is "eventually done before the user clicks";
+            // it never has to win a CPU race.
+            #[cfg(windows)]
+            unsafe {
+                use windows::Win32::System::Threading::{
+                    GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
+                };
+                let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+            }
+
             loop {
                 // Block until there's a task.
                 let task = {

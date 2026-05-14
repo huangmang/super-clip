@@ -2,6 +2,31 @@
 
 所有对 Super Clip 的重大功能改进和 Bug 修复都会记录在此。
 
+## [0.7.1] - 2026-05-14
+
+### OCR 性能（即时识别）
+
+- **PP-OCRv5 server → mobile** — det 84 MB → 4.6 MB，rec 80 MB → 15.9 MB，installer 从 152 MB 缩到 **26 MB**（缩 6.5×）。剪贴板进图到 OCR 结果出齐 e2e **7.5 s → ~330 ms**（**22× 加速**），4 行截图 3 连测稳态 185/348/347 ms。精度仅降 ~3-5%（UI 截图场景肉眼无差）。
+- **ORT GraphOptimizationLevel::Level3** — 之前用默认 Level1。开启常量折叠 + op fusion + layout 传播，稳态推理 20-30% off（已经叠加进 mobile 的速度数据）。
+- **ORT intra_threads 限到逻辑核 / 2** — 默认会用全部核，OCR 跑起来 CPU 满载 → WebView2 UI 线程拿不到调度时间，前台动画/输入卡顿。半核后 OCR 慢 1.3-1.5×（mobile 还是 sub-second），但 UI 始终流畅。
+- **`perform_ocr` 改 async + `tauri::async_runtime::spawn_blocking`** — sync 命令会占 Tauri 命令池 worker，多秒推理期间其他 invoke（窗口尺寸、剪贴板事件、列表刷新）排队等。改 async 后跑在专用 blocking 池，并发命令照常调度。
+- **预加载 worker Windows 优先级降到 `THREAD_PRIORITY_BELOW_NORMAL`** — 内核调度倾向 UI 线程，预加载在 CPU 紧张时主动让路。
+- **`LocalOcrEngine::warmup()` dummy 推理** — `warm_start` 后跑一轮 `det(1,3,64,64)` + `rec(1,3,48,320)` 假输入，把 first-inference 开销（kernel dispatch / arena bootstrap / threadpool init）提前到 app 启动时。实测 0.61s 完成，第一次真实 OCR 直接走 hot 路径。
+
+### Bug 修复
+
+- **智能链接误识** — 旧的电话正则太松，把日期（`2026-05-14`）、版本号（`1.2.3.456`）、订单号（`1234-5678`）、连续/重复数字（`12345678`、`88888888888`）全当电话。重写为**国别专属图样**（中国手机 1[3-9]xxxxxxxxx / 中国座机 / 400-800 服务号 / 国际 +CC / 北美 NNN-NNN-NNNN）+ `(?<![\d.\-])` lookbehind/ahead 防数字串内匹配 + 单调/全相同数字过滤 + 同号去重。邮箱加局部首字符校验 + 连续点校验 + TLD 长度卡口。URL 加 host 至少含一点 + TLD 段长度校验。
+- **TS 类型修复** — `IconButtonProps.icon` / `Action.icon` 从 `ComponentType<{size,className}>` 改回 `LucideIcon`（lucide 的 `LucideProps` 比泛 ComponentType 更宽，`size` 还允许 string）。`OCRLayer` 的 `picked.filter` 类型谓词从 `x is OcrLine` 改 `x is EnrichedLine` 匹配 useMemo 派生类型。
+- **PP-OCRv5 server fallback 输出名** — 加 `fetch_name_0` 优先匹配（v5 ONNX 重命名），保留旧名作 fallback。
+
+### 验证
+
+- 新增 `latency_probe.ps1` / `e2e_latency.ps1`（本地诊断脚本，gitignored 不入库）：CPU% 探针 + 端到端剪贴板→DB 落定时延测试。
+- 类型检查 + cargo check 全绿。
+- Installer：`super-clip_0.7.1_x64-setup.exe` 26 MB / `super-clip_0.7.1_x64_zh-CN.msi` 39 MB。
+
+---
+
 ## [0.7.0] - 2026-05-14
 
 ### OCR 引擎升级

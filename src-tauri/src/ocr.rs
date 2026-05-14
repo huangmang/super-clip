@@ -239,12 +239,19 @@ impl LocalOcrEngine {
 
         // ORT session config:
         //   - `Level3` graph optimization = constant folding + op fusion +
-        //     layout propagation. 20–30% faster steady-state vs default
-        //     (`Level1`). Paid once at load time.
-        //   - `with_intra_threads` left on default ≈ physical core count,
-        //     which is near-optimal for OCR's large-kernel conv workloads.
-        //     Setting it too high (e.g. logical cores with HT) often *hurts*
-        //     on CPU inference due to cache contention.
+        //     layout propagation. 20–30% faster steady-state vs default.
+        //   - `with_intra_threads` capped at *half* the available logical
+        //     cores. Default behaviour (use all cores) saturates CPU for
+        //     2–8 s per inference and starves WebView2's UI thread →
+        //     visible jank during background OCR. Halving caps OCR's
+        //     footprint so the front-end stays at 60 FPS, at the cost of
+        //     roughly 1.3–1.5× longer inference (acceptable since OCR
+        //     runs preloaded in the background, not on the user's path).
+        let n_cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let intra_threads = (n_cores / 2).max(2);
+
         let build_session = |path: std::path::PathBuf, name: &str| -> Result<Session, String> {
             // Note: `map_err` argument is left untyped because in ort 2.0
             // each builder stage returns its own `Error<Stage>` generic.
@@ -252,6 +259,8 @@ impl LocalOcrEngine {
                 .map_err(|e| e.to_string())?
                 .with_optimization_level(GraphOptimizationLevel::Level3)
                 .map_err(|e| format!("opt-level for {}: {}", name, e))?
+                .with_intra_threads(intra_threads)
+                .map_err(|e| format!("intra-threads for {}: {}", name, e))?
                 .commit_from_file(path)
                 .map_err(|e| e.to_string())
         };

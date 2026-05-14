@@ -1,9 +1,11 @@
-import type { ComponentType, MouseEvent } from "react";
+import type { MouseEvent } from "react";
+import type { LucideIcon } from "lucide-react";
 
 export type IconButtonAccent = "indigo" | "emerald" | "amber" | "rose" | "red";
 
 export interface IconButtonProps {
-    icon: ComponentType<{ size?: number; className?: string }>;
+    /** Any lucide-react icon component. */
+    icon: LucideIcon;
     label: string;
     onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
     active?: boolean;

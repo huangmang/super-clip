@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
 import { appWindow, LogicalSize } from "@tauri-apps/api/window";
+import type { LucideIcon } from "lucide-react";
 import {
     X, Search, Maximize, Minimize, Copy, FileText, Table2, RotateCcw,
     Link as LinkIcon, Mail, Phone, Flame, Search as SearchGlassIcon,
@@ -236,7 +236,7 @@ export function ImageOcrViewer(props: ImageOcrViewerProps) {
     // a new record here — no JSX-level edits to the toolbar container.
     type Action = {
         key: string;
-        icon: ComponentType<{ size?: number; className?: string }>;
+        icon: LucideIcon;
         label: string;
         onClick: () => void;
         accent?: IconButtonAccent;

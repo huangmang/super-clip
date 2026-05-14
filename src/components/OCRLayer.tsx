@@ -351,7 +351,7 @@ export const OCRLayer = ({ ocrData, imgRef, isStretched, onCopyLine, onCopyRegio
         const picked = Array.from(selectedIdxs)
             .sort((a, b) => a - b)
             .map(i => sortedLines[i])
-            .filter((x): x is OcrLine => !!x);
+            .filter((x): x is EnrichedLine => !!x);
         onMultiSelectChange(picked);
     // sortedLines re-derived from ocrData; tracking ocrData keeps us in sync
     // without re-firing on every render.
