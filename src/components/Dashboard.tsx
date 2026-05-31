@@ -155,7 +155,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
     // Labels are resolved via t() at render time so language switches don't
     // require remounting Dashboard.
     const typeConfig: Record<string, { label: string, icon: any, color: string, textColor: string, bgColor: string }> = {
-        all:   { label: t('tab.all'),   icon: LayoutDashboard, color: "from-gray-500 to-gray-400",     textColor: "text-gray-400",    bgColor: "bg-white/5" },
+        all:   { label: t('tab.all'),   icon: LayoutDashboard, color: "from-gray-500 to-gray-400",     textColor: "text-gray-400",    bgColor: "bg-[var(--input-bg)]" },
         text:  { label: t('tab.text'),  icon: Type,            color: "from-blue-500 to-cyan-400",     textColor: "text-blue-400",    bgColor: "bg-blue-500/10" },
         image: { label: t('tab.image'), icon: ImageIcon,       color: "from-purple-500 to-pink-500",   textColor: "text-purple-400",  bgColor: "bg-purple-500/10" },
         link:  { label: t('tab.link'),  icon: LinkIcon,        color: "from-emerald-500 to-teal-400",  textColor: "text-emerald-400", bgColor: "bg-emerald-500/10" },
@@ -196,7 +196,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
             <Tooltip text="返回主界面" position="left">
                 <button
                     onClick={onClose}
-                    className="absolute top-6 right-6 text-gray-400 hover:text-white transition-all z-50 p-1.5 hover:bg-white/10 rounded-full active:scale-90"
+                    className="absolute top-6 right-6 text-gray-400 hover:text-white transition-all z-50 p-1.5 hover:bg-[var(--panel-hover)] rounded-full active:scale-90"
                 >
                     <X size={18} />
                 </button>
@@ -204,7 +204,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
 
             {/* Header */}
             <div className="relative">
-                <div className="flex items-center gap-2 text-blue-400 font-bold mb-1">
+                <div className="flex items-center gap-2 text-indigo-400 font-bold mb-1">
                     <BarChart3 size={20} />
                     <span className="text-[12px] uppercase tracking-widest font-bold">Analyzer</span>
                 </div>
@@ -221,8 +221,8 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                             }}
                             className={`py-2 text-[12px] font-bold rounded-xl transition-all ${
                                 selectedRange.key === range.key
-                                ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-[1.03]"
-                                : "bg-[var(--input-bg)] text-gray-500 hover:text-gray-300 border border-[var(--border-color)] hover:border-blue-500/30"
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
+                                : "bg-[var(--input-bg)] text-gray-500 hover:text-gray-300 border border-[var(--border-color)] hover:border-indigo-500/30"
                             }`}
                         >
                             {t(range.i18nKey)}
@@ -240,9 +240,9 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                 <>
                     {/* Module Selectors: High Impact Grid */}
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                        <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
                             <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
-                                <Clock size={14} className="text-blue-400" />
+                                <Clock size={14} className="text-indigo-400" />
                                 {t('dash.category_distribution_with_range', { range: t(selectedRange.i18nKey) })}
                             </h3>
                             <Tooltip text={t('dash.reset_tooltip')}>
@@ -312,7 +312,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                         const Icon = config.icon;
                                         return (
                                             <button key={key} onClick={() => handleModuleFilter(key)}
-                                                className="w-full relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all group hover:scale-[1.02] active:scale-[0.98] hover-glow"
+                                                className="w-full relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all group active:scale-[0.99] hover-glow"
                                                 style={{ background: `${color.glow}12`, border: '1px solid transparent' }}
                                                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = `${color.glow}40`; }}
                                                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; }}>
@@ -331,9 +331,9 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                     })}
                                 {/* Total row — prominent */}
                                 <button onClick={() => handleModuleFilter("all")}
-                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border border-blue-500/20 hover:border-blue-500/40 transition-all group hover:scale-[1.02] active:scale-[0.98]">
-                                    <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-blue-500/20">
-                                        <LayoutDashboard size={10} className="text-blue-400" />
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:border-indigo-500/40 transition-all group active:scale-[0.98]">
+                                    <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-indigo-500/20">
+                                        <LayoutDashboard size={10} className="text-indigo-400" />
                                     </div>
                                     <span className="text-[12px] font-bold text-gray-300 flex-1 text-left">{t('dash.total')}</span>
                                     <span className="text-base font-bold text-white count-pop">{currentRangeTotal}</span>
@@ -359,7 +359,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
 
                         return (
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                                <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
                                     <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider flex items-center gap-2">
                                         <Monitor size={14} className="text-cyan-400" />
                                         {t('dash.source_apps')}
@@ -396,38 +396,31 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                                     </div>
                                 </div>
 
-                                <div className="space-y-1 dash-stagger">
+                                <div className="space-y-0.5 dash-stagger">
                                     {sourceApps.slice(0, 8).map(([app, count], i) => {
                                         const maxCount = sourceApps[0]?.[1] || 1;
                                         const barPct = Math.round((count / maxCount) * 100);
                                         const pct = appTotal > 0 ? Math.round((count / appTotal) * 100) : 0;
-                                        const c = COLORS[i % COLORS.length];
                                         return (
                                             <button key={app} onClick={() => onFilter(app, "source_app")}
-                                                className="w-full relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all group hover:scale-[1.02] active:scale-[0.98] hover-glow"
-                                                style={{ background: `${c.glow}12`, border: '1px solid transparent' }}
-                                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = `${c.glow}40`; }}
-                                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; }}>
-                                                <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
-                                                    <div className="h-full rounded-xl opacity-20 app-bar-fill"
-                                                        style={{ '--bar-width': `${barPct}%`, '--bar-delay': `${i * 80}ms`, background: `linear-gradient(90deg, ${c.main}40, ${c.glow}10)` } as React.CSSProperties} />
-                                                </div>
-                                                <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 relative z-10" style={{ background: `${c.glow}20` }}>
-                                                    <Globe size={10} style={{ color: c.main }} />
-                                                </div>
-                                                <span className="text-[12px] font-medium truncate flex-1 text-left relative z-10" style={{ color: c.main }}>{app}</span>
-                                                <span className="text-[12px] font-mono font-bold px-1.5 py-0.5 rounded relative z-10" style={{ color: c.main, background: `${c.glow}15` }}>{count}</span>
-                                                <span className="text-[12px] font-mono relative z-10 w-7 text-right" style={{ color: `${c.main}80` }}>{pct}%</span>
+                                                className="w-full relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group text-[var(--text-dim)] hover:text-[var(--text-main)] active:scale-[0.99]"
+                                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--accent-softer)'; }}
+                                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                                                {/* single-color usage bar, quiet */}
+                                                <div className="absolute inset-y-0 left-0 rounded-lg pointer-events-none app-bar-fill"
+                                                    style={{ '--bar-width': `${barPct}%`, '--bar-delay': `${i * 60}ms`, background: 'var(--accent-softer)' } as React.CSSProperties} />
+                                                <Globe size={13} className="shrink-0 relative z-10 opacity-50" />
+                                                <span className="text-[12px] font-medium truncate flex-1 text-left relative z-10">{app}</span>
+                                                <span className="text-[12px] font-semibold tabular-nums relative z-10" style={{ color: 'var(--accent-light)' }}>{count}</span>
+                                                <span className="text-[11px] tabular-nums relative z-10 w-8 text-right opacity-50">{pct}%</span>
                                             </button>
                                         );
                                     })}
                                     {/* Total — prominent */}
-                                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20">
-                                        <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 bg-cyan-500/20">
-                                            <Monitor size={10} className="text-cyan-400" />
-                                        </div>
-                                        <span className="text-[12px] font-bold text-gray-300 flex-1 text-left">{t('dash.total')}</span>
-                                        <span className="text-base font-bold text-white count-pop">{appTotal}</span>
+                                    <div className="flex items-center gap-3 px-3 py-2.5 mt-1 rounded-lg border-t border-[var(--border-color)]">
+                                        <Monitor size={13} className="shrink-0 opacity-50 text-[var(--text-dim)]" />
+                                        <span className="text-[12px] font-semibold text-[var(--text-dim)] flex-1 text-left">{t('dash.total')}</span>
+                                        <span className="text-base font-bold text-[var(--text-main)] count-pop tabular-nums">{appTotal}</span>
                                     </div>
                                 </div>
                             </div>
@@ -450,7 +443,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
 
                         return (
                             <div className="space-y-4">
-                                <div className="flex items-center gap-2 border-b border-white/5 pb-2 text-blue-400">
+                                <div className="flex items-center gap-2 border-b border-[var(--border-color)] pb-2 text-indigo-400">
                                     <Hash size={16} />
                                     <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider">{t('dash.word_freq')}</h3>
                                 </div>
@@ -506,7 +499,7 @@ const Dashboard = ({ onClose, onOpenSettings, onClearHistory, onFilter, activeTa
                     {/* Smart Discoveries: Scaled down but present */}
                     {hasDiscoveries && (
                         <div className="space-y-3 pt-2">
-                            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                            <div className="flex items-center gap-2 border-b border-[var(--border-color)] pb-2">
                                 <Sparkles size={14} className="text-yellow-400" />
                                 <h3 className="text-[12px] font-bold text-[var(--text-main)] uppercase tracking-wider">{t('dash.discovery')}</h3>
                             </div>

@@ -23,6 +23,7 @@ import {
     X,
     Square,
     ScanSearch,
+    Search,
     Minus,
     Moon,
     Sun,
@@ -95,6 +96,20 @@ const getGroupKey = (dateStr: string): GroupKey => {
     return 'earlier';
 };
 
+// Relative "x ago" label, reusing the mini.* i18n strings. Falls back to an
+// absolute date once an item is older than a week.
+const timeAgo = (dateStr: string): string => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('mini.just_now');
+    if (mins < 60) return t('mini.minutes_ago', { n: mins });
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return t('mini.hours_ago', { n: hours });
+    const days = Math.floor(hours / 24);
+    if (days <= 7) return t('mini.days_ago', { n: days });
+    return new Date(dateStr).toLocaleDateString();
+};
+
 const NAV_SHORT_LABELS: Record<GroupKey, string> = {
     within_1h: '1h',
     within_3h: '3h',
@@ -106,34 +121,75 @@ const NAV_SHORT_LABELS: Record<GroupKey, string> = {
     earlier: '前',
 };
 
+// Scored language detection. The old version returned on the FIRST matching
+// `includes`, so anything that wasn't matched fell through to a hardcoded
+// `javascript` default — which mis-highlighted Python/SQL/etc. as JS. Now each
+// language accumulates a score from weighted signals, the highest wins, and an
+// unrecognized snippet falls back to `text` (Prism renders it plainly) rather
+// than being painted as the wrong language.
 const detectLanguage = (text: string): string => {
-    const lower = text.toLowerCase().trim();
+    const t = text.trim();
+    const lower = t.toLowerCase();
 
-    // 1. High Priority / Very Unique Tags
+    // Unambiguous markers — short-circuit, near-zero false positive.
     if (lower.includes('<?php')) return 'php';
-    if (lower.includes('<html>') || lower.includes('</div>') || lower.includes('</body>')) return 'html';
+    if (/^\s*</.test(t) && /<\/?[a-z][\w-]*[\s>/]/i.test(t) && /<\/(div|span|p|a|body|html|head|ul|li|table)/i.test(lower)) return 'markup';
+    // Strict JSON: parses cleanly.
+    if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+        try { JSON.parse(t); return 'json'; } catch { /* fall through to scoring */ }
+    }
 
-    // 2. Rust specific (Precede JS because they share 'let' and '=>')
-    if (lower.includes('fn ') || lower.includes('pub fn ') || lower.includes('use ') ||
-        lower.includes('impl ') || lower.includes('trait ') || lower.includes('mod ') ||
-        lower.includes('println!') || lower.includes('vec!') || lower.includes('let mut ') ||
-        lower.includes('#[derive(') || (lower.includes('match ') && lower.includes(' => '))) return 'rust';
+    const scores: Record<string, number> = {
+        rust: 0, javascript: 0, typescript: 0, python: 0, java: 0,
+        go: 0, cpp: 0, csharp: 0, sql: 0, css: 0, bash: 0, ruby: 0,
+    };
+    const has = (re: RegExp) => re.test(text);
 
-    // 3. Scripting / Types
-    if (lower.includes('import ') || lower.includes('export ') || lower.includes('const ') ||
-        lower.includes('let ') || lower.includes('=>') || lower.includes('console.log')) return 'javascript';
+    // Rust
+    if (has(/\bfn\s+\w+\s*\(/)) scores.rust += 3;
+    if (has(/\b(impl|trait|pub\s+fn|let\s+mut)\b/)) scores.rust += 2;
+    if (has(/println!|vec!|#\[derive\(|::</)) scores.rust += 2;
+    // Go
+    if (has(/\bfunc\s+\w*\s*\(/)) scores.go += 3;
+    if (has(/\bpackage\s+\w+/) && has(/\bimport\s+\(/)) scores.go += 2;
+    if (has(/:=|\bfmt\.|\bchan\b/)) scores.go += 1;
+    // Python
+    if (has(/\bdef\s+\w+\s*\(.*\)\s*:/)) scores.python += 3;
+    if (has(/^\s*(from\s+\w+\s+)?import\s+\w+/m)) scores.python += 2;
+    if (has(/\bprint\s*\(|\bself\b|\belif\b|->.*:/)) scores.python += 1;
+    // SQL
+    if (has(/\bselect\b[\s\S]*\bfrom\b/i)) scores.sql += 3;
+    if (has(/\b(insert\s+into|update\s+\w+\s+set|delete\s+from|create\s+table)\b/i)) scores.sql += 3;
+    // CSS
+    if (has(/[.#]?[\w-]+\s*\{[^}]*:[^}]*;[^}]*\}/)) scores.css += 3;
+    if (has(/\b(display|color|margin|padding|background|font-size)\s*:/)) scores.css += 1;
+    // Java / C#
+    if (has(/\b(public|private|protected)\s+(static\s+)?(class|void|int|string)\b/i)) scores.java += 2;
+    if (has(/\bSystem\.out\.|\bpublic\s+class\b/)) scores.java += 2;
+    if (has(/\busing\s+System\b|\bConsole\.Write|\bnamespace\s+\w+/)) scores.csharp += 3;
+    // C/C++
+    if (has(/#include\s*<\w+/)) scores.cpp += 3;
+    if (has(/\bint\s+main\s*\(|std::|cout\s*<</)) scores.cpp += 2;
+    // Bash
+    if (has(/^#!.*\b(bash|sh)\b/) || has(/\b(echo|grep|awk|sed)\s+/) && has(/\$\w+|\|\s/)) scores.bash += 2;
+    // Ruby
+    if (has(/\bdef\s+\w+[\s\S]*\bend\b/) || has(/\bputs\b|\brequire\b\s+['"]/)) scores.ruby += 2;
+    // TS / JS (TS first so it can outscore JS on type syntax)
+    if (has(/:\s*(string|number|boolean|void|any)\b|\binterface\s+\w+|\btype\s+\w+\s*=/)) scores.typescript += 3;
+    if (has(/\b(const|let)\s+\w+\s*=/)) scores.javascript += 2;
+    if (has(/=>|\bfunction\s*\(|\bconsole\.log|\bexport\s+(default|const|function)\b/)) scores.javascript += 2;
+    if (has(/\bimport\s+.*\bfrom\s+['"]/)) scores.javascript += 1;
+    // TS inherits JS-ish syntax — fold JS score in so TS wins only with real type markers.
+    if (scores.typescript > 0) scores.typescript += Math.min(scores.javascript, 2);
 
-    // 4. Other languages
-    if (lower.includes('def ') && lower.includes(':')) return 'python';
-    if (lower.includes('public class ') || (lower.includes('private ') && lower.includes('{'))) return 'java';
-    if (lower.includes('func ') && lower.includes('{')) return 'go';
-    if (lower.includes('package ') && lower.includes('import (')) return 'go';
-    if (lower.includes('#include <') || lower.includes('int main(')) return 'cpp';
-    if (lower.includes('select ') && lower.includes('from ')) return 'sql';
-    if (lower.includes('.css {') || lower.includes('display: ') || lower.includes('color: ')) return 'css';
-    if (lower.startsWith('{') || lower.startsWith('[') || (lower.includes(':') && lower.includes('"'))) return 'json';
-
-    return 'javascript';
+    let best = 'text';
+    let bestScore = 0;
+    for (const [lang, s] of Object.entries(scores)) {
+        if (s > bestScore) { bestScore = s; best = lang; }
+    }
+    // Need a real signal to claim a language; otherwise render as plain text
+    // (Prism shows it unstyled) instead of guessing JavaScript.
+    return bestScore >= 2 ? best : 'text';
 };
 
 interface Clip {
@@ -176,16 +232,14 @@ interface ClipPage {
     has_more: boolean;
 }
 
-const PAGE_SIZE = 100;
-
 const TAB_DEFS = [
     { id: "all", key: "tab.all", icon: null },
     { id: "text", key: "tab.text", icon: FileText },
-    { id: "file", key: "tab.file", icon: FileText },
-    { id: "favorite", key: "tab.favorite", icon: Star },
     { id: "image", key: "tab.image", icon: ImageIcon },
+    { id: "file", key: "tab.file", icon: FileText },
     { id: "link", key: "tab.link", icon: LinkIcon },
     { id: "code", key: "tab.code", icon: CodeIcon },
+    { id: "favorite", key: "tab.favorite", icon: Star },
 ];
 
 // Initialize locale from localStorage on module load
@@ -216,7 +270,11 @@ function App() {
     const [showOnboarding, setShowOnboarding] = useState<boolean>(() => shouldShowOnboarding());
     const [copyFeedback, setCopyFeedback] = useState(false);
     const [copyConfirmClip, setCopyConfirmClip] = useState<{clip: Clip, shouldPaste: boolean} | null>(null);
-    const [isDashboard, setIsDashboard] = useState(true);
+    // Analytics (Dashboard) is a SECONDARY view now — the app opens straight to
+    // the clipboard history ("看得见的剪贴板历史"). Reach analytics on demand via
+    // the 📊 title-bar icon or Ctrl+D. Keeps the main view focused on the one
+    // job that matters: see and reuse what you copied.
+    const [isDashboard, setIsDashboard] = useState(false);
     const [isMultiSelect, setIsMultiSelect] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     
@@ -224,7 +282,10 @@ function App() {
     const [sourceAppFilter, setSourceAppFilter] = useState<string | null>(null);
     const [expandedClips, setExpandedClips] = useState<number[]>([]); // Track expanded text clips
     const [segmentingClips, setSegmentingClips] = useState<number[]>([]); // Track clips in word-segmentation mode
-    const [timeFilter, setTimeFilter] = useState<string | null>('1d'); // null, '30m', '2h', '1d', '3d'
+    // Default to ALL time, not "last 1d". The app's job is "看得见的剪贴板历史"
+    // — opening to an empty screen just because you hadn't copied in a day broke
+    // that promise. Time windows are now an opt-in filter.
+    const [timeFilter, setTimeFilter] = useState<string | null>(null); // null, '30m', '2h', '1d', '3d'
     const [isMinimalist, setIsMinimalist] = useState(false);
     const [miniSearch, setMiniSearch] = useState("");
     const [miniSelectedIndex, setMiniSelectedIndex] = useState(0);
@@ -233,7 +294,15 @@ function App() {
     const [selectedSegments, setSelectedSegments] = useState<Record<number, number[]>>({}); // clipId -> segmentIndices[]
     const [everythingFiles, setEverythingFiles] = useState<any[]>([]);
     const [fileCategory, setFileCategory] = useState<string>("all"); // "all", "doc", "image", "exe", "folder"
-    const [hasMore, setHasMore] = useState(true);
+    // Render windowing: only this many filtered rows are mounted at once.
+    // Grows via the scroll sentinel; resets when the filter/search changes.
+    const RENDER_STEP = 50;
+    const [renderLimit, setRenderLimit] = useState(RENDER_STEP);
+    // Signature moment: id of the clip that *just* landed via a live copy, so
+    // the list can play a one-shot "drop in" flash on exactly that row.
+    const [justArrivedId, setJustArrivedId] = useState<number | null>(null);
+    const arrivedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const listScrollRef = useRef<HTMLDivElement>(null);
     const sentinelRef = useRef<HTMLDivElement>(null);
 
 
@@ -249,18 +318,19 @@ function App() {
     //              soft is opt-in only, auto never resolves to it)
     // `theme` is the resolved value used for rendering. When pref is `auto`
     // we recompute from `prefers-color-scheme` and react to OS changes.
-    const [themePref, setThemePref] = useState<'dark' | 'light' | 'soft' | 'auto'>('dark');
-    const [theme, setTheme] = useState<'dark' | 'light' | 'soft'>('dark');
+    const [themePref, setThemePref] = useState<'dark' | 'light' | 'soft' | 'typora' | 'auto'>('dark');
+    const [theme, setTheme] = useState<'dark' | 'light' | 'soft' | 'typora'>('dark');
     const [entities, setEntities] = useState<{ entity_type: string; value: string; display: string }[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
 
-    const applyTheme = (resolved: 'dark' | 'light' | 'soft') => {
+    const applyTheme = (resolved: 'dark' | 'light' | 'soft' | 'typora') => {
         setTheme(resolved);
-        // Always reset both theme classes first so swapping back to dark
+        // Always reset all variant classes first so swapping back to dark
         // (no class) cleanly drops whichever variant was active.
-        document.documentElement.classList.remove("light", "soft");
+        document.documentElement.classList.remove("light", "soft", "typora");
         if (resolved === 'light') document.documentElement.classList.add("light");
         else if (resolved === 'soft') document.documentElement.classList.add("soft");
+        else if (resolved === 'typora') document.documentElement.classList.add("typora");
     };
 
     // Load theme preference, resolve, and subscribe to OS change when on `auto`.
@@ -268,7 +338,7 @@ function App() {
         const initTheme = async () => {
             const saved = localStorage.getItem("theme");
             const dbTheme = await invoke("get_setting", { key: "theme" }).catch(() => null);
-            const pref = ((dbTheme || saved || 'dark') as 'dark' | 'light' | 'soft' | 'auto');
+            const pref = ((dbTheme || saved || 'dark') as 'dark' | 'light' | 'soft' | 'typora' | 'auto');
             setThemePref(pref);
             if (pref === 'auto') {
                 const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -302,21 +372,35 @@ function App() {
         const restore = async () => {
             try {
                 const raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) return;
-                const g = JSON.parse(raw) as { x: number; y: number; w: number; h: number };
-                if (
-                    typeof g.x !== "number" || typeof g.y !== "number" ||
-                    typeof g.w !== "number" || typeof g.h !== "number" ||
-                    g.w < 320 || g.h < 240
-                ) return;
-                // Best-effort sanity check: visible portion of any monitor.
-                // Negative coords are valid for multi-monitor setups so we don't reject them.
-                if (Math.abs(g.x) > 30000 || Math.abs(g.y) > 30000) return;
-                await appWindow.setPosition(new PhysicalPosition(g.x, g.y));
-                await appWindow.setSize(new PhysicalSize(g.w, g.h));
+                let applied = false;
+                if (raw) {
+                    const g = JSON.parse(raw) as { x: number; y: number; w: number; h: number };
+                    const valid =
+                        typeof g.x === "number" && typeof g.y === "number" &&
+                        typeof g.w === "number" && typeof g.h === "number" &&
+                        g.w >= 320 && g.h >= 240 &&
+                        Math.abs(g.x) <= 30000 && Math.abs(g.y) <= 30000;
+                    if (valid) {
+                        await appWindow.setSize(new PhysicalSize(g.w, g.h));
+                        await appWindow.setPosition(new PhysicalPosition(g.x, g.y));
+                        applied = true;
+                    }
+                }
+                // No (valid) saved geometry → center at the conf default so the
+                // window never opens parked off-screen.
+                if (!applied) {
+                    await appWindow.center();
+                }
             } catch {
-                // ignore — corrupt storage just falls back to default geometry
+                // Corrupt storage: fall back to centered default.
+                try { await appWindow.center(); } catch { /* noop */ }
             } finally {
+                // Geometry is settled — reveal the window (it starts hidden to
+                // avoid a flash at the wrong size/position).
+                try {
+                    await appWindow.show();
+                    await appWindow.setFocus();
+                } catch { /* noop */ }
                 restored = true;
             }
         };
@@ -347,11 +431,12 @@ function App() {
     }, []);
 
     const toggleTheme = () => {
-        // Cycle: dark → light → soft → auto → dark
-        const nextPref: 'dark' | 'light' | 'soft' | 'auto' =
+        // Cycle: dark → light → soft → typora → auto → dark
+        const nextPref: 'dark' | 'light' | 'soft' | 'typora' | 'auto' =
             themePref === 'dark' ? 'light' :
             themePref === 'light' ? 'soft' :
-            themePref === 'soft' ? 'auto' : 'dark';
+            themePref === 'soft' ? 'typora' :
+            themePref === 'typora' ? 'auto' : 'dark';
         setThemePref(nextPref);
         if (nextPref === 'auto') {
             const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -443,29 +528,68 @@ function App() {
 
     // (multi-select + hint state now live inside <ImageOcrViewer>; nothing to sync here)
 
-    const loadClips = useCallback(async (reset = true) => {
+    // Full dataset stays in memory so search/filter see everything (and the
+    // `type:` / /regex/ syntax keeps working). Heavy lifting is moved to RENDER
+    // windowing (renderLimit) rather than data paging, so we never break search.
+    const loadClips = useCallback(async () => {
         try {
-            if (reset) {
-                // Load all clips to ensure filters work correctly across the full dataset
-                const allClips = await invoke<Clip[]>("get_clips");
-                setClips(allClips);
-                setHasMore(false);
-            } else {
-                const offset = clips.length;
-                const page = await invoke<ClipPage>("get_clips_page", { limit: PAGE_SIZE, offset });
-                setClips(prev => [...prev, ...page.items]);
-                setHasMore(page.has_more);
-            }
+            const allClips = await invoke<Clip[]>("get_clips");
+            setClips(allClips);
         } catch (error) {
             console.error("Failed to load clips:", error);
         }
-    }, [clips.length]);
+    }, []);
+
+    // Incremental refresh after a copy/dedup: pull only the newest rows and
+    // merge them in, instead of re-fetching the entire history (which used to
+    // run on every single clipboard event — the app's highest-frequency op).
+    const mergeLatest = useCallback(async () => {
+        try {
+            const page = await invoke<ClipPage>("get_clips_page", { limit: 20, offset: 0 });
+            const fresh = page.items;
+            if (!fresh.length) return;
+            // The freshly copied/dedup-bumped row sorts to the very top once
+            // pinned items are excluded — flash it so the user *sees* it land.
+            const landed = fresh.find(c => !c.is_pinned) ?? fresh[0];
+            if (landed) {
+                setJustArrivedId(landed.id);
+                if (arrivedTimerRef.current) clearTimeout(arrivedTimerRef.current);
+                arrivedTimerRef.current = setTimeout(() => setJustArrivedId(null), 1100);
+            }
+            setClips(prev => {
+                const freshIds = new Set(fresh.map(c => c.id));
+                // Drop any in-memory copies of the fresh rows (dedup may have
+                // moved an existing id to the top), then splice fresh back in and
+                // re-sort to match the backend order: pinned first, then newest.
+                const rest = prev.filter(c => !freshIds.has(c.id));
+                const merged = [...fresh, ...rest];
+                merged.sort((a, b) =>
+                    (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0) ||
+                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                );
+                return merged;
+            });
+        } catch (error) {
+            console.error("Failed to merge latest clips:", error);
+        }
+    }, []);
 
     // Debounce search input to avoid re-filtering on every keystroke
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedSearch(search), 150);
         return () => clearTimeout(timer);
     }, [search]);
+
+    // When a clip lands live, gently bring the top into view so the user sees
+    // the drop-in — but only if they're already near the top (don't yank them
+    // away from reading older history) and not in the middle of a search.
+    useEffect(() => {
+        if (justArrivedId == null || debouncedSearch) return;
+        const el = listScrollRef.current;
+        if (el && el.scrollTop < 120) {
+            el.scrollTo({ top: 0, behavior: "smooth" });
+        }
+    }, [justArrivedId, debouncedSearch]);
 
     // Extract entities for selected clip
     useEffect(() => {
@@ -489,7 +613,7 @@ function App() {
     useEffect(() => {
         loadClips();
         const unlistenNewClip = listen("clip:created", () => {
-            loadClips();
+            mergeLatest();
         });
 
         const unlistenShowMode = listen<string>("window:show-mode", (event) => {
@@ -791,25 +915,36 @@ function App() {
         };
     }, []);
 
-    // Infinite scroll: load more when sentinel becomes visible
+    // Infinite scroll: grow the render window when the sentinel scrolls into
+    // view. Data is already all in memory — we're just mounting more rows.
     useEffect(() => {
         if (!sentinelRef.current) return;
         const observer = new IntersectionObserver(
             (entries) => {
-                if (entries[0].isIntersecting && hasMore) {
-                    loadClips(false);
+                if (entries[0].isIntersecting) {
+                    setRenderLimit((prev) => prev + RENDER_STEP);
                 }
             },
             { threshold: 0.1 }
         );
         observer.observe(sentinelRef.current);
         return () => observer.disconnect();
-    }, [hasMore, loadClips]);
+    }, [renderLimit]);
 
-    // Reset selection when filters change
+    // Reset selection AND the render window when filters change, so a search
+    // always starts from the top showing the first page of matches.
     useEffect(() => {
         setSelectedIndex(0);
-    }, [activeTab, debouncedSearch]);
+        setRenderLimit(RENDER_STEP);
+    }, [activeTab, debouncedSearch, timeFilter, sourceAppFilter]);
+
+    // Keyboard nav can move selection past the render window; grow it so the
+    // selected row is always mounted (and therefore scrollable into view).
+    useEffect(() => {
+        if (selectedIndex >= renderLimit - 5) {
+            setRenderLimit((prev) => Math.max(prev, selectedIndex + RENDER_STEP));
+        }
+    }, [selectedIndex, renderLimit]);
 
     const toggleFavorite = async (e: React.MouseEvent, id: number) => {
         e.stopPropagation();
@@ -999,7 +1134,7 @@ function App() {
 
                         <LazyCodeBlock
                             language={detectedLang}
-                            theme={theme === 'soft' ? 'light' : theme}
+                            theme={(theme === 'soft' || theme === 'typora') ? 'light' : theme}
                             code={clip.content.length > 2000 ? clip.content.slice(0, 2000) + "\n... (truncated for preview)" : clip.content}
                         />
                     </div>
@@ -1163,7 +1298,7 @@ function App() {
                                                 return next;
                                             });
                                         }}
-                                        className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold shadow-lg shadow-blue-500/20 transition-all flex items-center gap-1"
+                                        className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-1"
                                     >
                                         <Copy size={10} />
                                         {t('action.copy_selected')}
@@ -1217,20 +1352,20 @@ function App() {
     };
 
     return (
-        <div className={`h-screen ${theme} bg-[var(--bg-color)] text-[var(--text-main)] selection:bg-indigo-500/30 overflow-hidden transition-colors duration-300 flex flex-col rounded-xl border border-white/10 shadow-2xl`}>
+        <div className={`h-screen ${theme} bg-[var(--bg-color)] text-[var(--text-main)] selection:bg-indigo-500/30 overflow-hidden transition-colors duration-300 flex flex-col rounded-xl border border-[var(--border-color)] shadow-2xl`}>
             {/* Custom Title Bar */}
             <div data-tauri-drag-region className="h-8 flex items-center justify-between bg-[var(--header-bg)] border-b border-[var(--border-color)] select-none shrink-0 transition-colors duration-500">
                 <div className="flex items-center gap-2 px-3 pointer-events-none">
-                    <div 
-                        className="w-6 h-6 rounded-full border-2 flex items-center justify-center animate-docs-breathe animate-color-cycle shadow-[0_0_8px_rgba(88,166,255,0.2)] ml-1"
+                    <div
+                        className="w-6 h-6 rounded-full border-2 flex items-center justify-center animate-docs-breathe shadow-[0_0_8px_var(--accent-ring)] ml-1"
                         style={{ borderColor: 'var(--accent-color)' }}
                     >
-                        <div 
+                        <div
                             className="w-2 h-2 rounded-full animate-docs-breathe-delayed"
                             style={{ backgroundColor: 'var(--accent-color)' }}
                         />
                     </div>
-                    <span className="text-[14px] font-bold tracking-widest text-[#d1d5db] uppercase font-mono ml-1.5 pt-0.5">Super Clip</span>
+                    <span className="text-[13px] font-semibold tracking-[0.01em] text-[var(--text-main)] ml-1.5">Super Clip</span>
                 </div>
                 
                 <div className="flex items-center h-full">
@@ -1239,11 +1374,12 @@ function App() {
                         className="h-full px-3 text-gray-500 hover:text-indigo-400 hover:bg-[var(--panel-hover)] transition-all outline-none border-none cursor-pointer bg-transparent"
                     >
                         {/* Icon reflects the *current* preference so user can
-                         * tell soft from light at a glance. Cycle order:
-                         *   dark (Sun) → light (Moon) → soft (BookOpen) → auto (SunMoon) */}
+                         * tell themes apart at a glance. Cycle order:
+                         *   dark (Sun) → light (Moon) → soft (BookOpen) → typora (FileText) → auto (SunMoon) */}
                         {themePref === 'dark' ? <Sun size={14} /> :
                          themePref === 'light' ? <Moon size={14} /> :
                          themePref === 'soft' ? <BookOpen size={14} /> :
+                         themePref === 'typora' ? <FileText size={14} /> :
                          <SunMoon size={14} />}
                     </button>
                     <button 
@@ -1269,18 +1405,24 @@ function App() {
 
             <div className="flex-1 flex flex-col overflow-hidden relative">
             {/* Header */}
-            <div className="p-4 glass sticky top-0 z-20 space-y-3 shadow-xl">
+            <div className="p-4 glass glass-blur sticky top-0 z-20 space-y-3 border-b border-[var(--border-color)]">
                 {/* Search */}
                 <div className="relative group">
+                    <Search
+                        size={16}
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--text-dim)] opacity-60 transition-colors group-focus-within:text-[var(--accent-light)] group-focus-within:opacity-100"
+                    />
                     <input
                         type="text"
                         placeholder={t('search.placeholder')}
                         aria-label={t('search.placeholder')}
-                        className="w-full bg-[var(--input-bg)] border border-[var(--border-color)] rounded-lg pl-10 pr-12 py-2 text-sm focus:outline-none focus:border-indigo-500/50 transition-all placeholder:text-[var(--text-dim)] focus:bg-[var(--panel-hover)]"
+                        className="w-full bg-[var(--input-bg)] border border-[var(--border-color)] rounded-xl pl-10 pr-32 py-2.5 text-sm focus:outline-none transition-all placeholder:text-[var(--text-dim)] placeholder:opacity-50 focus:border-[var(--accent-border)]"
+                        onFocus={(e) => { e.currentTarget.style.boxShadow = '0 0 0 3px var(--accent-ring)'; }}
+                        onBlur={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                     />
-                    <div className="absolute right-3 top-2 flex items-center gap-2">
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         <Tooltip text={isMultiSelect ? t('multi.cancel') : t('multi.toggle')} position="bottom" offset={28}>
                             <button
                                 onClick={() => {
@@ -1290,7 +1432,7 @@ function App() {
                                         setLastSelectedId(null);
                                     }
                                 }}
-                                className={`transition-colors p-1.5 rounded-lg ${isMultiSelect ? "text-blue-400 bg-blue-400/10" : "text-gray-500 hover:text-blue-400 hover:bg-white/5"}`}
+                                className={`transition-colors p-1.5 rounded-lg ${isMultiSelect ? "text-indigo-400 bg-indigo-400/10" : "text-gray-500 hover:text-indigo-400 hover:bg-[var(--panel-hover)]"}`}
                             >
                                 <CheckSquare size={18} />
                             </button>
@@ -1300,7 +1442,7 @@ function App() {
                             <Tooltip text={t('multi.select_all')} position="bottom" offset={28}>
                                 <button
                                     onClick={handleSelectAll}
-                                    className="p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-white/5 transition-colors"
+                                    className="p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-[var(--panel-hover)] transition-colors"
                                 >
                                     {selectedIds.length === filteredClips.length && filteredClips.length > 0 ? <CheckSquare size={18} className="text-indigo-400" /> : <Square size={18} />}
                                 </button>
@@ -1310,7 +1452,7 @@ function App() {
                         <Tooltip text={t('dash.clear')} position="bottom" offset={28}>
                             <button
                                 onClick={() => setIsClearConfirmOpen(true)}
-                                className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-white/5 transition-colors"
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-[var(--panel-hover)] transition-colors"
                             >
                                 <Eraser size={18} />
                             </button>
@@ -1319,7 +1461,7 @@ function App() {
                         <Tooltip text={t('dash.title')} position="bottom" offset={28}>
                             <button
                                 onClick={() => setIsDashboard(!isDashboard)}
-                                className={`transition-colors p-1.5 rounded-lg ${isDashboard ? "text-blue-400 bg-blue-400/10" : "text-gray-500 hover:text-blue-400 hover:bg-white/5"}`}
+                                className={`transition-colors p-1.5 rounded-lg ${isDashboard ? "text-indigo-400 bg-indigo-400/10" : "text-gray-500 hover:text-indigo-400 hover:bg-[var(--panel-hover)]"}`}
                             >
                                 <LayoutDashboard size={18} />
                             </button>
@@ -1328,7 +1470,7 @@ function App() {
                         <Tooltip text={t('dash.settings')} position="bottom" offset={28}>
                             <button
                                 onClick={() => setIsSettingsOpen(true)}
-                                className="p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-white/5 transition-colors"
+                                className="p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-[var(--panel-hover)] transition-colors"
                             >
                                 <SettingsIcon size={18} />
                             </button>
@@ -1337,7 +1479,7 @@ function App() {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                     {TAB_DEFS.map((tab) => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
@@ -1345,12 +1487,13 @@ function App() {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${isActive
-                                    ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
-                                    : "bg-[var(--input-bg)] text-[var(--text-dim)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-main)]"
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap border ${isActive
+                                    ? "border-[var(--accent-border)] text-[var(--accent-light)]"
+                                    : "border-transparent text-[var(--text-dim)] hover:bg-[var(--panel-hover)] hover:text-[var(--text-main)]"
                                     }`}
+                                style={isActive ? { background: 'var(--accent-soft)' } : undefined}
                             >
-                                {Icon && <Icon size={12} className={isActive ? "text-white" : "text-gray-500"} />}
+                                {Icon && <Icon size={13} className={isActive ? "text-[var(--accent-light)]" : "opacity-60"} />}
                                 {t(tab.key)}
                             </button>
                         )
@@ -1362,15 +1505,17 @@ function App() {
                     <div className="flex items-center gap-1.5 pt-1">
                         {sourceAppFilter && (
                             <button onClick={() => setSourceAppFilter(null)}
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all">
-                                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors hover:brightness-110"
+                                style={{ background: 'var(--accent-soft)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-color)' }} />
                                 {sourceAppFilter}
                                 <X size={8} className="opacity-60" />
                             </button>
                         )}
                         {activeTab !== "all" && !isDashboard && (
                             <button onClick={() => setActiveTab("all")}
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-all">
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-colors hover:brightness-110"
+                                style={{ background: 'var(--accent-soft)', color: 'var(--accent-light)', border: '1px solid var(--accent-border)' }}>
                                 {t(`tab.${activeTab}`)}
                                 <X size={8} className="opacity-60" />
                             </button>
@@ -1382,8 +1527,8 @@ function App() {
             {/* Main Content Area */}
             <div className="flex-1 flex overflow-hidden">
                 {/* List View (Main) */}
-                <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isDashboard ? "border-r border-white/5" : ""}`}>
-                    <div role="listbox" aria-label="Clipboard history" className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
+                <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isDashboard ? "border-r border-[var(--border-color)]" : ""}`}>
+                    <div ref={listScrollRef} role="listbox" aria-label="Clipboard history" className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth custom-scrollbar">
                         {filteredClips.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-full text-[var(--text-dim)] space-y-4 px-8">
                                 {clips.length === 0 ? (
@@ -1393,7 +1538,7 @@ function App() {
                                         </div>
                                         <div className="text-center space-y-2">
                                             <p className="text-sm font-bold text-[var(--text-main)]">{t('welcome.title')}</p>
-                                            <p className="text-[11px] leading-relaxed">{t('welcome.body')}<br/>{t('welcome.shortcut_hint')} <kbd className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-[10px]">?</kbd></p>
+                                            <p className="text-[11px] leading-relaxed">{t('welcome.body')}<br/>{t('welcome.shortcut_hint')} <kbd className="px-1.5 py-0.5 rounded bg-[var(--input-bg)] border border-[var(--border-color)] font-mono text-[10px]">?</kbd></p>
                                         </div>
                                     </>
                                 ) : debouncedSearch ? (
@@ -1411,7 +1556,7 @@ function App() {
                         ) : (
                             (() => {
                                 let currentKey: GroupKey | "" = "";
-                                return filteredClips.map((clip, index) => {
+                                return filteredClips.slice(0, renderLimit).map((clip, index) => {
                                     const isSelected = selectedIds.includes(clip.id);
                                     const key = getGroupKey(clip.created_at);
                                     const isNewGroup = key !== currentKey;
@@ -1447,15 +1592,26 @@ function App() {
                                         onMouseEnter={() => {
                                             setSelectedIndex(index);
                                         }}
-                                        className={`group glass hover:bg-[var(--panel-hover)] hover:shadow-xl border transition-all duration-300 cursor-pointer relative ${index === selectedIndex
-                                            ? "border-blue-500 ring-4 ring-blue-500/10 z-10 scale-[1.01] shadow-2xl"
-                                            : isSelected ? "border-blue-500/50 bg-blue-500/5 shadow-inner" : "border-[var(--border-color)] hover:border-blue-500/30"
-                                            } rounded-2xl p-4 clip-entry`}
-                                        style={{ "--index": Math.min(index, 15) } as React.CSSProperties}
+                                        className={`group glass hover:bg-[var(--panel-hover)] border transition-all duration-200 cursor-pointer relative overflow-hidden ${index === selectedIndex
+                                            ? "z-10"
+                                            : isSelected ? "bg-[var(--accent-soft)]" : "border-[var(--border-color)] hover:border-[var(--accent-border)]"
+                                            } rounded-2xl p-4 clip-entry ${clip.id === justArrivedId ? "clip-arrived" : ""}`}
+                                        style={{
+                                            "--index": Math.min(index, 15),
+                                            ...(index === selectedIndex
+                                                ? { borderColor: 'var(--accent-color)', boxShadow: '0 0 0 3px var(--accent-ring), 0 8px 24px -8px rgba(0,0,0,0.4)' }
+                                                : isSelected
+                                                    ? { borderColor: 'var(--accent-border)' }
+                                                    : {}),
+                                        } as unknown as React.CSSProperties}
                                     >
+                                        {/* Left accent stripe — selection marker */}
+                                        {index === selectedIndex && (
+                                            <span className="absolute left-0 top-0 bottom-0 w-[3px] rounded-r" style={{ background: 'var(--accent-color)' }} />
+                                        )}
                                         {/* Multi-select Checkbox */}
                                         {isMultiSelect && (
-                                            <div 
+                                            <div
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     toggleSelect(clip.id, e.shiftKey);
@@ -1470,7 +1626,8 @@ function App() {
                                             </div>
                                         )}
                                         {/* Actions (visible on hover) */}
-                                        <div className={`absolute top-3 right-3 flex gap-1 bg-[var(--header-bg)] rounded-lg shadow-xl z-20 border border-[var(--border-color)] transition-all duration-200 ${index === selectedIndex ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                        <div className={`absolute top-2.5 right-2.5 flex gap-0.5 glass-blur rounded-xl z-20 border border-[var(--border-color)] p-0.5 shadow-lg transition-opacity duration-200 ${index === selectedIndex ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                                            style={{ background: 'var(--panel-bg-solid)' }}>
                                             <Tooltip text={t('action.copy')}>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleCopy(clip); }}
@@ -1524,39 +1681,38 @@ function App() {
                                         </div>
 
                                         {/* Meta */}
-                                        <div className="mt-3 flex items-center justify-between text-[11px] font-medium">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`px-2 py-0.5 rounded font-bold uppercase tracking-wider border ${clip.type === 'code' ? 'bg-green-900/20 text-green-500 border-green-500/20' :
-                                                    clip.type === 'image' ? 'bg-purple-900/20 text-purple-500 border-purple-500/20' :
-                                                        clip.type === 'link' ? 'bg-blue-900/20 text-blue-500 border-blue-500/20' :
-                                                            'bg-[var(--input-bg)] text-[var(--text-dim)] border-[var(--border-color)]'
-                                                    }`}>{clip.type}</span>
-                                                {clip.content_html && (
-                                                    <span
-                                                        title={t('badge.rich_text_tip')}
-                                                        className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-amber-900/20 text-amber-400 border-amber-500/20"
-                                                    >
-                                                        {t('badge.rich_text')}
-                                                    </span>
-                                                )}
-                                                <span className="text-gray-400">{new Date(clip.created_at).toLocaleString()}</span>
-                                                {clip.source_app && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setSourceAppFilter(sourceAppFilter === clip.source_app ? null : clip.source_app!);
-                                                        }}
-                                                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-bold transition-all cursor-pointer group shadow-sm ${
-                                                            sourceAppFilter === clip.source_app
-                                                                ? "bg-indigo-600/20 border-indigo-500/50 text-indigo-400"
-                                                                : "bg-[var(--input-bg)] border-[var(--border-color)] text-[var(--text-dim)] hover:text-indigo-400 hover:border-indigo-500/30"
-                                                        }`}
-                                                    >
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.9)] group-hover:animate-pulse" />
-                                                        <span className="opacity-80 group-hover:opacity-100">{clip.source_app}</span>
-                                                    </button>
-                                                )}
-                                            </div>
+                                        <div className="mt-3 flex items-center gap-2 text-[11px]">
+                                            {/* Type — single quiet chip */}
+                                            <span className="px-1.5 py-0.5 rounded-md font-medium text-[10px] tracking-wide bg-[var(--input-bg)] text-[var(--text-dim)] border border-[var(--border-color)]">
+                                                {t(`tab.${clip.type}`)}
+                                            </span>
+                                            {clip.content_html && (
+                                                <span
+                                                    title={t('badge.rich_text_tip')}
+                                                    className="px-1.5 py-0.5 rounded-md text-[10px] font-medium tracking-wide border"
+                                                    style={{ color: 'var(--accent-light)', borderColor: 'var(--accent-border)', background: 'var(--accent-softer)' }}
+                                                >
+                                                    {t('badge.rich_text')}
+                                                </span>
+                                            )}
+                                            <span className="text-[var(--text-dim)] opacity-70 tabular-nums">{timeAgo(clip.created_at)}</span>
+                                            {clip.source_app && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSourceAppFilter(sourceAppFilter === clip.source_app ? null : clip.source_app!);
+                                                    }}
+                                                    className={`ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-colors cursor-pointer ${
+                                                        sourceAppFilter === clip.source_app
+                                                            ? "text-[var(--accent-light)]"
+                                                            : "text-[var(--text-dim)] hover:text-[var(--accent-light)]"
+                                                    }`}
+                                                    style={sourceAppFilter === clip.source_app ? { background: 'var(--accent-soft)' } : undefined}
+                                                >
+                                                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-color)' }} />
+                                                    <span className="opacity-80 max-w-[140px] truncate">{clip.source_app}</span>
+                                                </button>
+                                            )}
                                         </div>
 
                                         {/* Entity Quick Actions */}
@@ -1580,7 +1736,7 @@ function App() {
                                                                 handleCopy({ content: entity.value, type: "text" } as Clip);
                                                             }
                                                         }}
-                                                        className="flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-medium transition-all hover:scale-105 active:scale-95"
+                                                        className="flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-medium transition-all hover:brightness-125 active:scale-[0.97]"
                                                         style={{
                                                             borderColor: entity.entity_type === "url" ? "rgba(59,130,246,0.3)" :
                                                                 entity.entity_type === "email" ? "rgba(168,85,247,0.3)" :
@@ -1613,7 +1769,7 @@ function App() {
                             })()
                         )}
                         {/* Infinite scroll sentinel */}
-                        {hasMore && <div ref={sentinelRef} className="h-8" />}
+                        {renderLimit < filteredClips.length && <div ref={sentinelRef} className="h-8" />}
                     </div>
                 </div>
 
@@ -1622,12 +1778,12 @@ function App() {
                     <div className={`absolute ${isDashboard ? "right-[320px]" : "right-6"} top-1/2 -translate-y-1/2 z-30 bg-[var(--panel-bg)]/80 backdrop-blur-xl border border-[var(--border-color)] rounded-full p-2 shadow-2xl flex flex-col items-center gap-2 slide-in-from-right animate-in transition-all duration-300`}>
                         <button 
                             onClick={() => document.querySelector('.custom-scrollbar')?.scrollTo({ top: 0, behavior: 'smooth' })} 
-                            className="p-1.5 text-gray-500 hover:text-[var(--text-main)] hover:bg-white/10 rounded-full transition-colors group"
+                            className="p-1.5 text-gray-500 hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] rounded-full transition-colors group"
                             title={t('nav.scroll_top')}
                         >
                             <ChevronUp size={16} className="group-hover:-translate-y-0.5 transition-transform"/>
                         </button>
-                        <div className="w-px h-3 bg-white/10" />
+                        <div className="w-px h-3 bg-[var(--border-color)]" />
                         
                         {availableGroups.map((groupKey) => (
                             <button
@@ -1640,13 +1796,13 @@ function App() {
                             </button>
                         ))}
 
-                        <div className="w-px h-3 bg-white/10" />
+                        <div className="w-px h-3 bg-[var(--border-color)]" />
                         <button 
                             onClick={() => {
                                 const container = document.querySelector('.custom-scrollbar');
                                 container?.scrollTo({ top: container?.scrollHeight, behavior: 'smooth' });
                             }} 
-                            className="p-1.5 text-gray-500 hover:text-[var(--text-main)] hover:bg-white/10 rounded-full transition-colors group"
+                            className="p-1.5 text-gray-500 hover:text-[var(--text-main)] hover:bg-[var(--panel-hover)] rounded-full transition-colors group"
                             title={t('nav.scroll_bottom')}
                         >
                             <ChevronDown size={16} className="group-hover:translate-y-0.5 transition-transform"/>
@@ -1724,7 +1880,7 @@ function App() {
                                             setSelectedIds(filteredClips.map(c => c.id));
                                         }
                                     }}
-                                    className="px-2 py-1 text-[10px] bg-white/5 hover:bg-white/10 text-[var(--text-main)] rounded transition-all flex items-center gap-1 border border-white/5"
+                                    className="px-2 py-1 text-[10px] bg-[var(--input-bg)] hover:bg-[var(--panel-hover)] text-[var(--text-main)] rounded transition-all flex items-center gap-1 border border-[var(--border-color)]"
                                 >
                                     {selectedIds.length === filteredClips.length ? t('multi.deselect_all') : t('multi.select_all')}
                                 </button>
@@ -1732,7 +1888,7 @@ function App() {
                             <div className="w-px h-4 bg-[var(--border-color)]" />
                             <button
                                 onClick={handleBulkCopy}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-500/20"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all active:scale-[0.97] shadow-lg shadow-indigo-500/20"
                             >
                                 <Copy size={13} /> {t('multi.merge_copy')}
                             </button>
@@ -1745,7 +1901,7 @@ function App() {
                             <Tooltip text={t('multi.deselect')}>
                                 <button
                                     onClick={() => setSelectedIds([])}
-                                    className="p-1.5 hover:bg-white/5 text-gray-500 rounded-lg transition-colors"
+                                    className="p-1.5 hover:bg-[var(--panel-hover)] text-gray-500 rounded-lg transition-colors"
                                 >
                                     <X size={14} />
                                 </button>
@@ -1959,7 +2115,7 @@ function App() {
                     onExit={() => setIsMinimalist(false)}
                     fileCategory={fileCategory}
                     setFileCategory={setFileCategory}
-                    theme={theme === 'soft' ? 'light' : theme}
+                    theme={(theme === 'soft' || theme === 'typora') ? 'light' : theme}
                     everythingStatus={everythingStatus}
                 />
             )}
@@ -1967,10 +2123,12 @@ function App() {
             {/* Keyboard Shortcuts Help */}
             {showShortcuts && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
-                    <div className="bg-[var(--panel-bg)] border border-[var(--border-color)] rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 animate-scale-in" onClick={e => e.stopPropagation()}>
+                    <div className="border border-[var(--border-color)] rounded-2xl w-full max-w-md p-6 space-y-4 animate-scale-in"
+                        style={{ background: 'var(--panel-bg-solid)', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.5)' }}
+                        onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between">
-                            <h3 className="text-base font-black text-[var(--text-main)]">{t('shortcuts.title')}</h3>
-                            <button onClick={() => setShowShortcuts(false)} className="text-[var(--text-dim)] hover:text-[var(--text-main)] p-1 rounded-lg hover:bg-white/5"><X size={16} /></button>
+                            <h3 className="text-base font-semibold text-[var(--text-main)]">{t('shortcuts.title')}</h3>
+                            <button onClick={() => setShowShortcuts(false)} className="text-[var(--text-dim)] hover:text-[var(--text-main)] p-1 rounded-lg hover:bg-[var(--panel-hover)]"><X size={16} /></button>
                         </div>
                         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[12px]">
                             {[
@@ -1987,13 +2145,13 @@ function App() {
                                 ["Double Ctrl", t('shortcut.double_ctrl')],
                                 ["?", t('shortcut.question')],
                             ].map(([key, desc]) => (
-                                <div key={key} className="flex items-center justify-between py-1.5 border-b border-white/5">
-                                    <kbd className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[var(--text-main)] font-mono text-[11px] font-bold">{key}</kbd>
+                                <div key={key} className="flex items-center justify-between py-1.5 border-b border-[var(--border-color)]">
+                                    <kbd className="px-2 py-0.5 rounded-md bg-[var(--input-bg)] border border-[var(--border-color)] text-[var(--text-main)] font-mono text-[11px] font-bold">{key}</kbd>
                                     <span className="text-[var(--text-dim)] text-[11px]">{desc}</span>
                                 </div>
                             ))}
                         </div>
-                        <p className="text-[10px] text-[var(--text-dim)] text-center pt-2">按 <kbd className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-[10px]">?</kbd> 或 <kbd className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 font-mono text-[10px]">Esc</kbd> 关闭</p>
+                        <p className="text-[10px] text-[var(--text-dim)] text-center pt-2">按 <kbd className="px-1.5 py-0.5 rounded bg-[var(--input-bg)] border border-[var(--border-color)] font-mono text-[10px]">?</kbd> 或 <kbd className="px-1.5 py-0.5 rounded bg-[var(--input-bg)] border border-[var(--border-color)] font-mono text-[10px]">Esc</kbd> 关闭</p>
                     </div>
                 </div>
             )}
@@ -2006,7 +2164,7 @@ function App() {
                         <button onClick={handleUndoDelete} className="text-[12px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-500/10">
                             {t('toast.undo')}
                         </button>
-                        <div className="w-12 h-1 bg-white/10 rounded-full overflow-hidden">
+                        <div className="w-12 h-1 bg-[var(--border-color)] rounded-full overflow-hidden">
                             <div className="h-full bg-indigo-500 rounded-full" style={{ animation: 'shrink 3s linear forwards' }} />
                         </div>
                     </div>

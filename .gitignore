@@ -51,3 +51,5 @@ src-tauri/resources/
 *.msi
 *.deb
 *.AppImage
+.twopane-backup/
+ui-shot.png

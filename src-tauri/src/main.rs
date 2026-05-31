@@ -231,19 +231,22 @@ fn main() {
             // `perform_ocr` on user click is instant.
             ocr_preload::start_worker(app.handle());
 
-            // Force-reset main-window position + size on every boot. Webview2
-            // caches window geometry and on a dev loop where the window once
-            // opened on a secondary monitor / scaled display that's no longer
-            // there, the cached coords can park it entirely off-screen — the
-            // user sees "nothing happened" when clicking the tray. Re-centering
-            // at a sane default every launch avoids that ghost-window class of
-            // bug at essentially zero cost.
+            // Window starts hidden (`visible:false` in tauri.conf.json). The
+            // frontend restores saved geometry and then shows it — so the user
+            // never sees the window flash at the wrong size/position first.
+            // Safety net: if the frontend stalls and never shows the window,
+            // force it visible (centered) after a short delay so the tray click
+            // can't silently no-op into a ghost window.
             if let Some(window) = app.get_window("main") {
-                use tauri::LogicalSize;
-                let _ = window.set_size(LogicalSize::new(800.0, 600.0));
-                let _ = window.center();
-                let _ = window.show();
-                let _ = window.set_focus();
+                let w = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    if !w.is_visible().unwrap_or(false) {
+                        let _ = w.center();
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                });
             }
 
             Ok(())
