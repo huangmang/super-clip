@@ -84,9 +84,9 @@
 /* "Typora" theme — the clean document look of Typora's default (GitHub)
  * style: pure-white canvas, near-black ink (#33333) for long-form reading,
  * hairline GitHub-grey borders (#e1e4e8), faint grey panel fills (#f6f8fa),
- * and Typora's signature link blue (#4183c4) as the accent. Unlike the other
- * themes this drops brand-indigo on purpose — the whole point is the
- * writing-app book-paper feel. */
+ * and a monochrome charcoal-ink accent (#44403a) instead of any blue —
+ * accents read as a quiet warm-black stamp on the paper. Drops brand-indigo
+ * on purpose; the whole point is the writing-app book-paper feel. */
 :root.typora {
   --bg-color: #ffffff;
   --panel-bg: rgba(255, 255, 255, 0.92);
@@ -94,15 +94,17 @@
   --header-bg: rgba(250, 250, 250, 0.92);
   --input-bg: #f6f8fa;
   --border-color: #e1e4e8;
-  --panel-hover: rgba(65, 131, 196, 0.06);
+  --panel-hover: rgba(68, 64, 58, 0.05);
   --text-main: #333333;
   --text-dim: #9a9a9a;
-  --accent-color: #4183c4;   /* Typora link blue */
-  --accent-light: #357ab7;
-  --accent-soft: rgba(65, 131, 196, 0.10);
-  --accent-softer: rgba(65, 131, 196, 0.05);
-  --accent-border: rgba(65, 131, 196, 0.30);
-  --accent-ring: rgba(65, 131, 196, 0.18);
+  /* Monochrome charcoal-ink accent — no blue. Reads as a quiet warm-black
+   * stamp on the white canvas, matching the document/writing feel. */
+  --accent-color: #44403a;
+  --accent-light: #2e2b26;   /* crisp dark for active text/icons on white */
+  --accent-soft: rgba(68, 64, 58, 0.09);
+  --accent-softer: rgba(68, 64, 58, 0.045);
+  --accent-border: rgba(68, 64, 58, 0.38);
+  --accent-ring: rgba(68, 64, 58, 0.14);
   --tray-bg: rgba(255, 255, 255, 0.92);
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(0, 0, 0, 0.18);
