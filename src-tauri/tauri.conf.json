@@ -91,10 +91,12 @@
                     "fullscreen": false,
                     "resizable": true,
                     "title": "Super Clip",
-                    "width": 800,
-                    "height": 600,
+                    "width": 820,
+                    "height": 640,
+                    "minWidth": 600,
+                    "minHeight": 460,
                     "center": true,
-                    "visible": true,
+                    "visible": false,
                     "decorations": false,
                     "transparent": true
                 }

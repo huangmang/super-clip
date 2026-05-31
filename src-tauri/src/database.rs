@@ -92,19 +92,49 @@ fn validate_time_modifier(range: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// UTF-8-tolerant text read. A clip whose content contains invalid UTF-8 bytes
+/// (e.g. a copy from an app that put non-UTF-8 on the clipboard) used to make
+/// `row.get::<String>()` error out — and because that error aborted the whole
+/// `query_map`, a SINGLE bad row blanked the ENTIRE history list. Read the raw
+/// bytes and lossy-decode instead, so one corrupt field degrades to a `�` glyph
+/// rather than wiping everything.
+fn get_text(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<String> {
+    match row.get::<_, String>(idx) {
+        Ok(s) => Ok(s),
+        Err(_) => {
+            // Fall back to raw bytes → lossy UTF-8.
+            match row.get::<_, Vec<u8>>(idx) {
+                Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+                Err(_) => Ok(String::new()),
+            }
+        }
+    }
+}
+
+fn get_text_opt(row: &rusqlite::Row<'_>, idx: usize) -> Option<String> {
+    match row.get::<_, Option<String>>(idx) {
+        Ok(v) => v,
+        Err(_) => row
+            .get::<_, Option<Vec<u8>>>(idx)
+            .ok()
+            .flatten()
+            .map(|b| String::from_utf8_lossy(&b).into_owned()),
+    }
+}
+
 fn row_to_clip(row: &rusqlite::Row<'_>) -> rusqlite::Result<Clip> {
     Ok(Clip {
         id: row.get(0)?,
-        content: row.get(1)?,
-        type_: row.get(2)?,
-        is_favorite: row.get(3)?,
+        content: get_text(row, 1)?,
+        type_: get_text(row, 2)?,
+        is_favorite: row.get(3).unwrap_or(false),
         is_pinned: row.get(4).unwrap_or(false),
-        created_at: row.get(5)?,
-        ocr_text: row.get(6).ok(),
-        ocr_lines: row.get(7).ok(),
-        source_app: row.get(8).ok(),
-        tags: row.get(9).ok(),
-        content_html: row.get(10).ok(),
+        created_at: get_text(row, 5)?,
+        ocr_text: get_text_opt(row, 6),
+        ocr_lines: get_text_opt(row, 7),
+        source_app: get_text_opt(row, 8),
+        tags: get_text_opt(row, 9),
+        content_html: get_text_opt(row, 10),
     })
 }
 
@@ -178,6 +208,40 @@ pub fn init(app_handle: &AppHandle) -> AppResult<Connection> {
             }
         }
         conn.execute("PRAGMA user_version = 1", [])?;
+    }
+
+    // Self-heal: the column set is the source of truth, NOT user_version.
+    // A version number can run ahead of the actual schema (interrupted ALTER,
+    // external tooling touching the DB, a half-applied migration) — which makes
+    // every `SELECT ... content_html ...` fail and the whole list read as empty.
+    // Re-add any expected column that's missing, regardless of version, so the
+    // app can never get wedged into a "0 rows because the query errors" state.
+    {
+        let mut have: std::collections::HashSet<String> = std::collections::HashSet::new();
+        if let Ok(mut stmt) = conn.prepare("PRAGMA table_info(clips)") {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(1)) {
+                for c in rows.flatten() { have.insert(c); }
+            }
+        }
+        for (col, ddl) in [
+            ("ocr_text",    "ALTER TABLE clips ADD COLUMN ocr_text TEXT"),
+            ("ocr_lines",   "ALTER TABLE clips ADD COLUMN ocr_lines TEXT"),
+            ("is_pinned",   "ALTER TABLE clips ADD COLUMN is_pinned BOOLEAN DEFAULT 0"),
+            ("source_app",  "ALTER TABLE clips ADD COLUMN source_app TEXT"),
+            ("tags",        "ALTER TABLE clips ADD COLUMN tags TEXT"),
+            ("content_html","ALTER TABLE clips ADD COLUMN content_html TEXT"),
+        ] {
+            if !have.contains(col) {
+                if let Err(e) = conn.execute(ddl, []) {
+                    let msg = e.to_string();
+                    if !msg.contains("duplicate column") {
+                        eprintln!("[DB] self-heal: failed to add column {}: {}", col, msg);
+                    }
+                } else {
+                    eprintln!("[DB] self-heal: re-added missing column {}", col);
+                }
+            }
+        }
     }
 
     if current_version < 2 {
