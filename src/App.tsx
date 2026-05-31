@@ -235,11 +235,11 @@ interface ClipPage {
 const TAB_DEFS = [
     { id: "all", key: "tab.all", icon: null },
     { id: "text", key: "tab.text", icon: FileText },
-    { id: "file", key: "tab.file", icon: FileText },
-    { id: "favorite", key: "tab.favorite", icon: Star },
     { id: "image", key: "tab.image", icon: ImageIcon },
+    { id: "file", key: "tab.file", icon: FileText },
     { id: "link", key: "tab.link", icon: LinkIcon },
     { id: "code", key: "tab.code", icon: CodeIcon },
+    { id: "favorite", key: "tab.favorite", icon: Star },
 ];
 
 // Initialize locale from localStorage on module load
