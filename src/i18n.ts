@@ -88,6 +88,11 @@ const translations: Record<string, Record<Locale, string>> = {
     'preview.multi_select_hint': { zh: 'Ctrl+点击 多选 · Alt+拖拽 框选', en: 'Ctrl+click to multi-select · Alt+drag to box-select' },
     'preview.multi_selected': { zh: '已选 {n} 行 · Ctrl+C 复制', en: '{n} lines selected · Ctrl+C to copy' },
     'preview.exit_hint': { zh: '按 ESC 或点击背景退出', en: 'Press ESC or click backdrop to exit' },
+    'preview.empty_title': { zh: '选择一条记录', en: 'Select an item' },
+    'preview.empty_body': { zh: '左侧选中后在此查看完整内容', en: 'Pick an item on the left to preview it here' },
+    'preview.chars': { zh: '{n} 字符', en: '{n} chars' },
+    'preview.open_link': { zh: '打开链接', en: 'Open link' },
+    'preview.open_file': { zh: '打开文件', en: 'Open file' },
 
     // ── App: Toasts ──
     'toast.copied': { zh: '已复制到剪贴板', en: 'Copied to clipboard' },

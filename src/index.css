@@ -24,8 +24,13 @@
   --text-main: #f0f6fc;
   --text-dim: #8b949e;
   --border-color: rgba(48, 54, 61, 0.6);
-  --accent-color: #58a6ff; /* Electric Blue (GitHub/Linear style) */
-  --accent-light: #79c0ff;
+  /* Single brand accent — Indigo. One color, used everywhere. */
+  --accent-color: #6366f1;
+  --accent-light: #818cf8;       /* lifted tint for icons/text on dark */
+  --accent-soft: rgba(99, 102, 241, 0.12);  /* fills, active backgrounds */
+  --accent-softer: rgba(99, 102, 241, 0.06); /* hover hints */
+  --accent-border: rgba(99, 102, 241, 0.30); /* active/selected borders */
+  --accent-ring: rgba(99, 102, 241, 0.18);   /* focus rings, glows */
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(110, 118, 129, 0.3);
 }
@@ -40,8 +45,12 @@
   --panel-hover: rgba(79, 70, 229, 0.06);
   --text-main: #0f172a;
   --text-dim: #64748b;
-  --accent-color: #4f46e5;
-  --accent-light: #6366f1;
+  --accent-color: #6366f1;
+  --accent-light: #4f46e5;
+  --accent-soft: rgba(99, 102, 241, 0.10);
+  --accent-softer: rgba(99, 102, 241, 0.05);
+  --accent-border: rgba(99, 102, 241, 0.28);
+  --accent-ring: rgba(99, 102, 241, 0.16);
   --tray-bg: rgba(255, 255, 255, 0.8);
 }
 
@@ -61,11 +70,42 @@
   --panel-hover: rgba(180, 140, 90, 0.06);
   --text-main: #443a30;
   --text-dim: #847868;
-  --accent-color: #4f46e5;
-  --accent-light: #6366f1;
+  --accent-color: #6366f1;
+  --accent-light: #4f46e5;
+  --accent-soft: rgba(99, 102, 241, 0.10);
+  --accent-softer: rgba(99, 102, 241, 0.05);
+  --accent-border: rgba(99, 102, 241, 0.26);
+  --accent-ring: rgba(99, 102, 241, 0.14);
   --tray-bg: rgba(245, 239, 230, 0.85);
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(140, 110, 70, 0.3);
+}
+
+/* "Typora" theme — the clean document look of Typora's default (GitHub)
+ * style: pure-white canvas, near-black ink (#33333) for long-form reading,
+ * hairline GitHub-grey borders (#e1e4e8), faint grey panel fills (#f6f8fa),
+ * and Typora's signature link blue (#4183c4) as the accent. Unlike the other
+ * themes this drops brand-indigo on purpose — the whole point is the
+ * writing-app book-paper feel. */
+:root.typora {
+  --bg-color: #ffffff;
+  --panel-bg: rgba(255, 255, 255, 0.92);
+  --panel-bg-solid: #ffffff;
+  --header-bg: rgba(250, 250, 250, 0.92);
+  --input-bg: #f6f8fa;
+  --border-color: #e1e4e8;
+  --panel-hover: rgba(65, 131, 196, 0.06);
+  --text-main: #333333;
+  --text-dim: #9a9a9a;
+  --accent-color: #4183c4;   /* Typora link blue */
+  --accent-light: #357ab7;
+  --accent-soft: rgba(65, 131, 196, 0.10);
+  --accent-softer: rgba(65, 131, 196, 0.05);
+  --accent-border: rgba(65, 131, 196, 0.30);
+  --accent-ring: rgba(65, 131, 196, 0.18);
+  --tray-bg: rgba(255, 255, 255, 0.92);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
 }
 
 * {
@@ -99,7 +139,7 @@ body {
 }
 
 ::selection {
-  background-color: rgba(88, 166, 255, 0.3);
+  background-color: rgba(99, 102, 241, 0.3);
   color: white;
 }
 
@@ -125,6 +165,38 @@ body {
   }
 }
 
+/* ═══ Signature moment: "live drop-in" ═══
+ * When a clip is copied while the window is open, its row drops in from the
+ * top with an accent-color ring pulse — so the user literally watches the
+ * clipboard history grow. The whole point of "看得见的剪贴板历史". */
+.clip-arrived {
+  animation: clipDropIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 5;
+}
+/* Ring lives INSIDE the card bounds (the card has overflow-hidden), so use an
+ * inset box-shadow that won't get clipped. */
+.clip-arrived::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: clipArrivedRing 1.1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes clipDropIn {
+  0%   { transform: translateY(-14px) scale(0.97); }
+  55%  { transform: translateY(0) scale(1.015); }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes clipArrivedRing {
+  0%   { box-shadow: inset 0 0 0 2px var(--accent-color), inset 0 0 20px 0 var(--accent-ring); opacity: 1; }
+  60%  { box-shadow: inset 0 0 0 1.5px var(--accent-color), inset 0 0 12px 0 var(--accent-ring); opacity: 1; }
+  100% { box-shadow: inset 0 0 0 0 transparent; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clip-arrived, .clip-arrived::after { animation: none; }
+}
+
 @keyframes clipIn {
   from {
     opacity: 0;
@@ -144,11 +216,11 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
-    radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.08), transparent 45%),
-    radial-gradient(circle at 100% 100%, rgba(31, 111, 235, 0.05), transparent 45%),
+  background:
+    radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.06), transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(99, 102, 241, 0.04), transparent 45%),
     radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.01), transparent 70%);
-  animation: bgRotate 80s ease-in-out infinite alternate;
+  animation: bgRotate 120s ease-in-out infinite alternate;
   z-index: -1;
   pointer-events: none;
 }
@@ -157,6 +229,11 @@ body::before {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Typora's whole identity is a flat, distraction-free white canvas — kill the
+ * ambient brand glow so the background reads as clean paper. (The theme class
+ * lives on <html>, so this targets html.typora > body::before.) */
+:root.typora body::before { display: none; }
 
 /* Minimalist Breathing Logo (from docs) with Color Cycling */
 @keyframes docs-breathe {
@@ -170,15 +247,6 @@ body::before {
   }
 }
 
-@keyframes color-cycle {
-  from { filter: hue-rotate(0deg); }
-  to { filter: hue-rotate(360deg); }
-}
-
-.animate-color-cycle {
-  animation: color-cycle 12s linear infinite;
-}
-
 .animate-docs-breathe {
   animation: docs-breathe 4s ease-in-out infinite;
 }
@@ -189,7 +257,7 @@ body::before {
 
 /* Dashboard resize handle */
 ::-webkit-resizer {
-  background: linear-gradient(135deg, transparent 60%, rgba(88, 166, 255, 0.3) 60%, rgba(88, 166, 255, 0.3) 70%, transparent 70%, transparent 80%, rgba(88, 166, 255, 0.2) 80%);
+  background: linear-gradient(135deg, transparent 60%, rgba(99, 102, 241, 0.3) 60%, rgba(99, 102, 241, 0.3) 70%, transparent 70%, transparent 80%, rgba(99, 102, 241, 0.2) 80%);
   border-radius: 2px;
 }
 
@@ -229,6 +297,26 @@ body::before {
 @keyframes shimmerSlide {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ═══ .glass — theme-adaptive surface ═══
+ * Shared base for cards/headers. Reads the active theme's panel tokens so
+ * it stays light in light/soft themes (no more hardcoded-dark surfaces).
+ * No backdrop-filter here on purpose: .glass is applied to every list
+ * card, and per-card blur while scrolling tanks perf and softens text.
+ * A 1px inset top highlight gives the "lifted" read without an opaque
+ * fill. Sticky surfaces that DO want blur opt in via .glass-blur. */
+.glass {
+  background: var(--panel-bg);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+:root.light .glass,
+:root.soft .glass {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.55);
+}
+.glass-blur {
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  backdrop-filter: blur(16px) saturate(1.5);
 }
 
 /* Card with hover lift — no backdrop-filter to keep text crisp */

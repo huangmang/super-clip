@@ -204,13 +204,14 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                         <button
                             onClick={() => setFileCategory(cat.id)}
                             key={cat.id}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                fileCategory === cat.id 
-                                ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-105" 
-                                : "bg-[var(--panel-bg)] text-[var(--text-dim)] hover:bg-[var(--panel-hover)] hover:text-blue-400"
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold tracking-tight transition-all border ${
+                                fileCategory === cat.id
+                                ? "border-[var(--accent-border)] text-[var(--accent-light)]"
+                                : "border-transparent text-[var(--text-dim)] hover:bg-[var(--panel-hover)] hover:text-[var(--accent-light)]"
                             }`}
+                            style={fileCategory === cat.id ? { background: 'var(--accent-soft)' } : undefined}
                         >
-                            <cat.icon size={12} className={fileCategory === cat.id ? "animate-pulse" : "group-hover:scale-110 transition-transform"} />
+                            <cat.icon size={13} className={fileCategory === cat.id ? "" : "opacity-60"} />
                             {t(cat.i18nKey)}
                         </button>
                     ))}
@@ -277,19 +278,18 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                                 onMouseEnter={() => onSelect(index)}
                                 style={{
                                     background: isActive
-                                        ? (theme === "dark" 
-                                            ? "linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(139,92,246,0.06) 100%)"
-                                            : "rgba(0, 113, 227, 0.05)")
+                                        ? (theme === "dark"
+                                            ? "linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(129,140,248,0.06) 100%)"
+                                            : "rgba(99, 102, 241, 0.06)")
                                         : "transparent",
                                     border: isActive
-                                        ? (theme === "dark" ? "1px solid rgba(99,102,241,0.2)" : "1px solid rgba(0, 113, 227, 0.1)")
+                                        ? (theme === "dark" ? "1px solid rgba(99,102,241,0.2)" : "1px solid rgba(99, 102, 241, 0.12)")
                                         : "1px solid transparent",
-                                    borderRadius: "14px",
-                                    transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                                    transform: isActive ? "translateX(6px)" : "none",
+                                    borderRadius: "12px",
+                                    transition: "all 0.18s cubic-bezier(0.4, 0, 0.2, 1)",
                                     "--index": Math.min(index, 15)
                                 } as React.CSSProperties}
-                                className={`flex items-center gap-3.5 px-4 py-3 cursor-pointer group clip-entry glass ${isActive ? 'bg-blue-500/10' : ''}`}
+                                className={`flex items-center gap-3.5 px-4 py-3 cursor-pointer group clip-entry glass ${isActive ? 'bg-indigo-500/10' : ''}`}
                             >
                                 {/* Number Badge */}
                                 {index < 8 ? (
@@ -297,10 +297,10 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                                         className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0"
                                         style={{
                                             background: isActive
-                                                ? "linear-gradient(135deg, #0071e3, #6366f1)"
+                                                ? "linear-gradient(135deg, #6366f1, #818cf8)"
                                                 : "rgba(128,128,128,0.08)",
                                             color: isActive ? "#fff" : "var(--text-dim)",
-                                            boxShadow: isActive ? "0 4px 12px rgba(0, 113, 227, 0.3)" : "none",
+                                            boxShadow: isActive ? "0 4px 12px rgba(99, 102, 241, 0.3)" : "none",
                                             border: isActive ? "none" : "1px solid var(--border-color)",
                                         }}
                                     >
@@ -323,9 +323,9 @@ const MinimalistView: React.FC<MinimalistViewProps> = ({
                                         </div>
                                     ) : (
                                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                                        isActive ? 'bg-blue-600 text-white shadow-lg rotate-12' : 'bg-black/20 text-blue-400/50'
+                                        isActive ? 'bg-indigo-600 text-white shadow-md' : 'bg-black/20 text-indigo-400/60'
                                     }`}>
-                                        <span className="text-xs font-black">{index + 1}</span>
+                                        <meta.icon size={15} strokeWidth={2} />
                                     </div>
                                     )}
                                 </div>

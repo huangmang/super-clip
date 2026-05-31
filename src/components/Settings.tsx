@@ -215,9 +215,10 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
     ];
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div
-                className="bg-[var(--panel-bg)] w-full max-w-md rounded-2xl border border-[var(--border-color)] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+                className="w-full max-w-md rounded-2xl border border-[var(--border-color)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+                style={{ background: 'var(--panel-bg-solid)', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset' }}
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
@@ -235,8 +236,8 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
 
                 {/* Tab Switcher + Language Toggle */}
                 <div className="flex border-b border-[var(--border-color)]">
-                    <button onClick={() => setSettingsTab("general")} className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${settingsTab === "general" ? "text-indigo-400 border-b-2 border-indigo-400" : "text-[var(--text-dim)] hover:text-[var(--text-main)]"}`}>{t('settings.tab_general')}</button>
-                    <button onClick={() => setSettingsTab("snippets")} className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${settingsTab === "snippets" ? "text-indigo-400 border-b-2 border-indigo-400" : "text-[var(--text-dim)] hover:text-[var(--text-main)]"}`}>{t('settings.tab_snippets')}</button>
+                    <button onClick={() => setSettingsTab("general")} className={`flex-1 py-2.5 text-[13px] font-medium transition-colors border-b-2 ${settingsTab === "general" ? "text-[var(--accent-light)] border-[var(--accent-color)]" : "text-[var(--text-dim)] border-transparent hover:text-[var(--text-main)]"}`}>{t('settings.tab_general')}</button>
+                    <button onClick={() => setSettingsTab("snippets")} className={`flex-1 py-2.5 text-[13px] font-medium transition-colors border-b-2 ${settingsTab === "snippets" ? "text-[var(--accent-light)] border-[var(--accent-color)]" : "text-[var(--text-dim)] border-transparent hover:text-[var(--text-main)]"}`}>{t('settings.tab_snippets')}</button>
                     <button
                         onClick={() => {
                             const next = locale === 'zh' ? 'en' : 'zh';
@@ -371,7 +372,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     </div>
 
                     {/* Minimalist Mode Shortcut */}
-                    <div className="space-y-3 border-t border-white/5 pt-6">
+                    <div className="space-y-3 border-t border-[var(--border-color)] pt-6">
                         <label className="text-xs font-medium text-[var(--text-dim)] uppercase tracking-wider block">
                             {t('settings.hotkey_mini')}
                         </label>
@@ -481,7 +482,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     </div>
 
                     {/* Auto Cleanup Section */}
-                    <div className="space-y-3 border-t border-white/5 pt-6">
+                    <div className="space-y-3 border-t border-[var(--border-color)] pt-6">
                         <label className="text-xs font-medium text-[var(--text-dim)] uppercase tracking-wider block">
                             {t('settings.retention_title')}
                         </label>
@@ -581,7 +582,7 @@ const Settings = ({ isOpen, onClose }: SettingsProps) => {
                     </div>
 
                     {/* Data Management — Export / Import JSON */}
-                    <div className="space-y-2 border-t border-white/5 pt-6">
+                    <div className="space-y-2 border-t border-[var(--border-color)] pt-6">
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
                             {t('settings.data_management')}
                         </label>

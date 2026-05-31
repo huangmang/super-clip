@@ -78,11 +78,12 @@ const Onboarding: React.FC<OnboardingProps> = ({ onClose }) => {
             aria-labelledby="onboarding-title"
             className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200"
         >
-            <div className="bg-[var(--panel-bg)] w-full max-w-md rounded-2xl border border-[var(--border-color)] shadow-2xl p-7 space-y-5 animate-in zoom-in-95 duration-200 relative">
+            <div className="w-full max-w-md rounded-2xl border border-[var(--border-color)] p-7 space-y-5 animate-in zoom-in-95 duration-200 relative"
+                style={{ background: 'var(--panel-bg-solid)', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.5)' }}>
                 <button
                     onClick={finish}
                     aria-label={t('onboard.skip')}
-                    className="absolute top-4 right-4 text-[var(--text-dim)] hover:text-[var(--text-main)] p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                    className="absolute top-4 right-4 text-[var(--text-dim)] hover:text-[var(--text-main)] p-1.5 rounded-lg hover:bg-[var(--panel-hover)] transition-colors"
                 >
                     <X size={16} />
                 </button>
@@ -108,7 +109,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onClose }) => {
                             ) : (
                                 <kbd
                                     key={i}
-                                    className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-[var(--text-main)] font-mono text-[12px] font-bold shadow-sm"
+                                    className="px-2.5 py-1 rounded-md bg-[var(--input-bg)] border border-[var(--border-color)] text-[var(--text-main)] font-mono text-[12px] font-bold shadow-sm"
                                 >
                                     {k}
                                 </kbd>
@@ -118,13 +119,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onClose }) => {
                 )}
 
                 {/* Step dots */}
-                <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                <div className="flex items-center justify-between pt-3 border-t border-[var(--border-color)]">
                     <div className="flex items-center gap-1.5">
                         {steps.map((_, i) => (
                             <div
                                 key={i}
                                 className={`h-1.5 rounded-full transition-all ${
-                                    i === step ? "w-6 bg-indigo-400" : "w-1.5 bg-white/15"
+                                    i === step ? "w-6 bg-indigo-400" : "w-1.5 bg-[var(--border-color)]"
                                 }`}
                             />
                         ))}
