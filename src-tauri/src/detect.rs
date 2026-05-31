@@ -82,44 +82,84 @@ fn looks_like_path(text: &str) -> bool {
     false
 }
 
-fn is_code(text: &str) -> bool {
-    let mut score = 0;
-    let trimmed = text.trim();
+static CODE_ASSIGN: OnceLock<Regex> = OnceLock::new();
+static CODE_FUNC: OnceLock<Regex> = OnceLock::new();
 
-    // JSON/Array structure
+fn is_code(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // Bracketed structure that actually carries code-ish punctuation. Bare
+    // "{a stray thought}" prose no longer qualifies.
     if (trimmed.starts_with('{') && trimmed.ends_with('}'))
         || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+    {
+        if trimmed.contains(':') || trimmed.contains(',') || trimmed.contains('"') {
+            return true;
+        }
+    }
+
+    let mut score = 0;
+
+    // Strong, near-zero-false-positive signals — any single one clears the bar.
+    let strong = [
+        "function ", "=> {", "});", "<?php", "#include", "public static",
+        "println!", "console.log", "System.out", "#!/", "</", "</>",
+    ];
+    if strong.iter().any(|s| text.contains(s)) {
+        score += 3;
+    }
+
+    // SQL: SELECT/UPDATE/DELETE co-occurring with FROM/WHERE/SET is unambiguous.
+    let upper = text.to_uppercase();
+    if (upper.contains("SELECT ") && upper.contains(" FROM "))
+        || (upper.contains("INSERT INTO "))
+        || (upper.contains("UPDATE ") && upper.contains(" SET "))
+        || (upper.contains("DELETE FROM "))
     {
         score += 3;
     }
 
-    // Strong indicators (weight: 2)
-    let strong = [
-        "function ", "class ", "import ", "export ", "impl ", "fn ",
-        "<div>", "<html>", "<?php", "#include", "SELECT ", "UPDATE ", "INSERT ", "DELETE FROM",
+    // A real `const/let/var NAME =` or `def/fn/func NAME(` assignment/definition
+    // — regex-anchored so prose like "let me", "var" (other languages), or a
+    // lone "=>" in notes doesn't trip it.
+    let assign = CODE_ASSIGN.get_or_init(|| {
+        Regex::new(r"\b(const|let|var|val)\s+[A-Za-z_$][\w$]*\s*[:=]").unwrap()
+    });
+    if assign.is_match(text) {
+        score += 3;
+    }
+    let func = CODE_FUNC.get_or_init(|| {
+        Regex::new(r"\b(fn|def|func|function)\s+[A-Za-z_][\w]*\s*\(").unwrap()
+    });
+    if func.is_match(text) {
+        score += 3;
+    }
+
+    // Medium signals (weight 2).
+    let medium = [
+        "class ", "import ", "export ", "impl ", "trait ",
+        "SELECT ", "INSERT ", "UPDATE ", "DELETE FROM", "<div", "<span",
     ];
-    for ind in strong {
+    for ind in medium {
         if text.contains(ind) {
             score += 2;
         }
     }
 
-    // Weak indicators (weight: 1)
-    let weak = ["const ", "let ", "var ", "def ", "pub ", "match ", "=>"];
-    for ind in weak {
-        if text.contains(ind) {
-            score += 1;
-        }
-    }
-
-    // Structural: multi-line with braces/semicolons
-    if text.lines().count() > 1 {
-        if text.contains('{') && text.contains('}') {
-            score += 2;
-        }
-        if text.contains(';') {
-            score += 1;
-        }
+    // Structural: several lines that END in code punctuation (;, {, }). A lone
+    // semicolon inside prose no longer counts — must be ≥2 code-terminated lines.
+    let code_line_ends = text
+        .lines()
+        .filter(|l| {
+            let t = l.trim_end();
+            t.ends_with(';') || t.ends_with('{') || t.ends_with('}')
+        })
+        .count();
+    if code_line_ends >= 2 {
+        score += 2;
     }
 
     score >= 3
@@ -233,76 +273,113 @@ fn patterns() -> &'static EntityPatterns {
     })
 }
 
+/// Per-type cap so a log or dump can't spray dozens of chips. Entities are
+/// "quick actions for an actionable value", not "scrape everything".
+const MAX_PER_TYPE: usize = 3;
+
+/// A clipboard item this long is a document/log/dump, not "a value with an
+/// entity in it". Skip extraction entirely — the chips were pure noise there.
+const ENTITY_SCAN_MAX_LEN: usize = 4000;
+
+/// Reject phone false positives: version numbers (1.0.20), build/timestamp/id
+/// digit runs, etc. A real phone number we surface must either carry an
+/// explicit `+CC` prefix, or be a plausible 7–15 digit number that is NOT just
+/// a bare run of digits embedded in a larger token.
+fn looks_like_phone(m: &regex::Match<'_>, text: &str) -> bool {
+    let s = m.as_str();
+    let digits: usize = s.chars().filter(|c| c.is_ascii_digit()).count();
+    if !(7..=15).contains(&digits) {
+        return false;
+    }
+    // Must contain a phone-ish separator or a country-code prefix; a bare
+    // unseparated digit run (1234567, version/build/id) is rejected.
+    let has_plus = s.trim_start().starts_with('+');
+    let has_sep = s.contains(' ') || s.contains('-') || s.contains('(');
+    if !has_plus && !has_sep {
+        return false;
+    }
+    // Reject if the match sits inside a longer alphanumeric/dotted token
+    // (version strings like 1.0.20.345, hashes, ids).
+    let bytes = text.as_bytes();
+    let start = m.start();
+    let end = m.end();
+    let prev_ok = start == 0 || {
+        let c = bytes[start - 1] as char;
+        !(c.is_ascii_alphanumeric() || c == '.')
+    };
+    let next_ok = end >= bytes.len() || {
+        let c = bytes[end] as char;
+        !(c.is_ascii_alphanumeric() || c == '.')
+    };
+    prev_ok && next_ok
+}
+
 pub fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
-    let p = patterns();
     let mut entities = Vec::new();
-    let mut seen = std::collections::HashSet::new();
 
-    // Emails
-    for m in p.email.find_iter(text) {
-        let val = m.as_str().to_string();
-        if seen.insert(("email".to_string(), val.clone())) {
-            entities.push(ExtractedEntity {
-                entity_type: "email".into(),
-                display: val.clone(),
-                value: val,
-            });
+    // Don't mine entities out of long documents/logs — that's where the chip
+    // spam came from. JSON below is still detected (it keys off the whole clip).
+    if text.len() <= ENTITY_SCAN_MAX_LEN {
+        let p = patterns();
+        let mut seen = std::collections::HashSet::new();
+        let mut push = |entities: &mut Vec<ExtractedEntity>, kind: &str, value: String, display: String| {
+            if entities.iter().filter(|e| e.entity_type == kind).count() >= MAX_PER_TYPE {
+                return;
+            }
+            if seen.insert((kind.to_string(), value.clone())) {
+                entities.push(ExtractedEntity { entity_type: kind.into(), display, value });
+            }
+        };
+
+        // Emails — low false-positive, keep as-is (capped).
+        for m in p.email.find_iter(text) {
+            let val = m.as_str().to_string();
+            push(&mut entities, "email", val.clone(), val);
         }
-    }
 
-    // URLs
-    for m in p.url.find_iter(text) {
-        let val = m.as_str().to_string();
-        if seen.insert(("url".to_string(), val.clone())) {
+        // URLs — capped so a link-heavy log doesn't spray a row of chips.
+        for m in p.url.find_iter(text) {
+            let val = m.as_str().to_string();
             let display = if val.len() > 60 { format!("{}...", &val[..57]) } else { val.clone() };
-            entities.push(ExtractedEntity {
-                entity_type: "url".into(),
-                display,
-                value: val,
+            push(&mut entities, "url", val, display);
+        }
+
+        // Hex colors.
+        for m in p.hex_color.find_iter(text) {
+            let val = m.as_str().to_string();
+            push(&mut entities, "color", val.clone(), val);
+        }
+
+        // IP addresses — octets 0-255 AND reject version-number shapes
+        // (leading-zero octets like 01, or values that are really X.Y.Z.W
+        // version strings are caught by the octet range; we additionally
+        // require it not be glued to surrounding alphanumerics).
+        for m in p.ip_address.find_iter(text) {
+            let val = m.as_str().to_string();
+            let octets_ok = val.split('.').all(|o| {
+                // reject leading zeros ("01") which are version- not IP-style
+                (o.len() == 1 || !o.starts_with('0'))
+                    && o.parse::<u16>().map(|n| n <= 255).unwrap_or(false)
             });
+            let bytes = text.as_bytes();
+            let prev_ok = m.start() == 0 || !(bytes[m.start() - 1] as char).is_ascii_alphanumeric();
+            let next_ok = m.end() >= bytes.len() || !(bytes[m.end()] as char).is_ascii_alphanumeric();
+            if octets_ok && prev_ok && next_ok {
+                push(&mut entities, "ip", val.clone(), val);
+            }
+        }
+
+        // Phone numbers — strict, see looks_like_phone.
+        for m in p.phone.find_iter(text) {
+            if looks_like_phone(&m, text) {
+                let val = m.as_str().trim().to_string();
+                push(&mut entities, "phone", val.clone(), val);
+            }
         }
     }
 
-    // Hex colors
-    for m in p.hex_color.find_iter(text) {
-        let val = m.as_str().to_string();
-        if seen.insert(("color".to_string(), val.clone())) {
-            entities.push(ExtractedEntity {
-                entity_type: "color".into(),
-                display: val.clone(),
-                value: val,
-            });
-        }
-    }
-
-    // IP addresses
-    for m in p.ip_address.find_iter(text) {
-        let val = m.as_str().to_string();
-        // Validate octets are 0-255
-        let valid = val.split('.').all(|o| o.parse::<u16>().map(|n| n <= 255).unwrap_or(false));
-        if valid && seen.insert(("ip".to_string(), val.clone())) {
-            entities.push(ExtractedEntity {
-                entity_type: "ip".into(),
-                display: val.clone(),
-                value: val,
-            });
-        }
-    }
-
-    // Phone numbers
-    for m in p.phone.find_iter(text) {
-        let val = m.as_str().to_string();
-        let digits: String = val.chars().filter(|c| c.is_ascii_digit()).collect();
-        if digits.len() >= 7 && seen.insert(("phone".to_string(), val.clone())) {
-            entities.push(ExtractedEntity {
-                entity_type: "phone".into(),
-                display: val.clone(),
-                value: val,
-            });
-        }
-    }
-
-    // JSON detection
+    // JSON detection — keys off the entire clip, so it's safe even for long
+    // content (a big JSON blob is exactly when "Format" is most useful).
     let trimmed = text.trim();
     if (trimmed.starts_with('{') && trimmed.ends_with('}'))
         || (trimmed.starts_with('[') && trimmed.ends_with(']'))
@@ -317,4 +394,47 @@ pub fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
     }
 
     entities
+}
+
+#[cfg(test)]
+mod detection_quality_tests {
+    use super::*;
+
+    #[test]
+    fn code_detection_accepts_real_code() {
+        assert!(is_code("const x = 5;"));
+        assert!(is_code("function foo() {\n  return 1;\n}"));
+        assert!(is_code("fn main() {\n    println!(\"hi\");\n}"));
+        assert!(is_code("def foo(x):\n    return x"));
+        assert!(is_code("{\"a\": 1, \"b\": 2}"));
+        assert!(is_code("SELECT * FROM users WHERE id = 1"));
+    }
+
+    #[test]
+    fn code_detection_rejects_prose() {
+        // The old heuristic tripped on a stray `=>`, a lone `;`, or `let`/`var`
+        // appearing in natural-language text. These must all stay plain text.
+        assert!(!is_code("我们今天讨论一下这个方案,然后 => 下一步"));
+        assert!(!is_code("Let me know when you're done; thanks"));
+        assert!(!is_code("会议纪要:第一项,第二项,第三项"));
+        assert!(!is_code("Build 12133786 finished at 23:27"));
+    }
+
+    #[test]
+    fn entities_reject_version_and_id_noise() {
+        let kinds = |t: &str| {
+            extract_entities(t).into_iter().map(|x| x.entity_type).collect::<Vec<_>>()
+        };
+        assert!(!kinds("version 1.0.20 released").contains(&"phone".to_string()));
+        assert!(!kinds("build 12133786").contains(&"phone".to_string()));
+        assert!(!kinds("1.0.20").contains(&"ip".to_string()));
+        assert!(kinds("call me at +1 415-555-0199").contains(&"phone".to_string()));
+        assert!(kinds("server 192.168.1.1 down").contains(&"ip".to_string()));
+    }
+
+    #[test]
+    fn entities_skip_long_documents() {
+        let long_log = "x".repeat(5000) + " http://a.com test@b.com";
+        assert!(extract_entities(&long_log).is_empty());
+    }
 }

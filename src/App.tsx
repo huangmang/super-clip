@@ -121,34 +121,75 @@ const NAV_SHORT_LABELS: Record<GroupKey, string> = {
     earlier: '前',
 };
 
+// Scored language detection. The old version returned on the FIRST matching
+// `includes`, so anything that wasn't matched fell through to a hardcoded
+// `javascript` default — which mis-highlighted Python/SQL/etc. as JS. Now each
+// language accumulates a score from weighted signals, the highest wins, and an
+// unrecognized snippet falls back to `text` (Prism renders it plainly) rather
+// than being painted as the wrong language.
 const detectLanguage = (text: string): string => {
-    const lower = text.toLowerCase().trim();
+    const t = text.trim();
+    const lower = t.toLowerCase();
 
-    // 1. High Priority / Very Unique Tags
+    // Unambiguous markers — short-circuit, near-zero false positive.
     if (lower.includes('<?php')) return 'php';
-    if (lower.includes('<html>') || lower.includes('</div>') || lower.includes('</body>')) return 'html';
+    if (/^\s*</.test(t) && /<\/?[a-z][\w-]*[\s>/]/i.test(t) && /<\/(div|span|p|a|body|html|head|ul|li|table)/i.test(lower)) return 'markup';
+    // Strict JSON: parses cleanly.
+    if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+        try { JSON.parse(t); return 'json'; } catch { /* fall through to scoring */ }
+    }
 
-    // 2. Rust specific (Precede JS because they share 'let' and '=>')
-    if (lower.includes('fn ') || lower.includes('pub fn ') || lower.includes('use ') ||
-        lower.includes('impl ') || lower.includes('trait ') || lower.includes('mod ') ||
-        lower.includes('println!') || lower.includes('vec!') || lower.includes('let mut ') ||
-        lower.includes('#[derive(') || (lower.includes('match ') && lower.includes(' => '))) return 'rust';
+    const scores: Record<string, number> = {
+        rust: 0, javascript: 0, typescript: 0, python: 0, java: 0,
+        go: 0, cpp: 0, csharp: 0, sql: 0, css: 0, bash: 0, ruby: 0,
+    };
+    const has = (re: RegExp) => re.test(text);
 
-    // 3. Scripting / Types
-    if (lower.includes('import ') || lower.includes('export ') || lower.includes('const ') ||
-        lower.includes('let ') || lower.includes('=>') || lower.includes('console.log')) return 'javascript';
+    // Rust
+    if (has(/\bfn\s+\w+\s*\(/)) scores.rust += 3;
+    if (has(/\b(impl|trait|pub\s+fn|let\s+mut)\b/)) scores.rust += 2;
+    if (has(/println!|vec!|#\[derive\(|::</)) scores.rust += 2;
+    // Go
+    if (has(/\bfunc\s+\w*\s*\(/)) scores.go += 3;
+    if (has(/\bpackage\s+\w+/) && has(/\bimport\s+\(/)) scores.go += 2;
+    if (has(/:=|\bfmt\.|\bchan\b/)) scores.go += 1;
+    // Python
+    if (has(/\bdef\s+\w+\s*\(.*\)\s*:/)) scores.python += 3;
+    if (has(/^\s*(from\s+\w+\s+)?import\s+\w+/m)) scores.python += 2;
+    if (has(/\bprint\s*\(|\bself\b|\belif\b|->.*:/)) scores.python += 1;
+    // SQL
+    if (has(/\bselect\b[\s\S]*\bfrom\b/i)) scores.sql += 3;
+    if (has(/\b(insert\s+into|update\s+\w+\s+set|delete\s+from|create\s+table)\b/i)) scores.sql += 3;
+    // CSS
+    if (has(/[.#]?[\w-]+\s*\{[^}]*:[^}]*;[^}]*\}/)) scores.css += 3;
+    if (has(/\b(display|color|margin|padding|background|font-size)\s*:/)) scores.css += 1;
+    // Java / C#
+    if (has(/\b(public|private|protected)\s+(static\s+)?(class|void|int|string)\b/i)) scores.java += 2;
+    if (has(/\bSystem\.out\.|\bpublic\s+class\b/)) scores.java += 2;
+    if (has(/\busing\s+System\b|\bConsole\.Write|\bnamespace\s+\w+/)) scores.csharp += 3;
+    // C/C++
+    if (has(/#include\s*<\w+/)) scores.cpp += 3;
+    if (has(/\bint\s+main\s*\(|std::|cout\s*<</)) scores.cpp += 2;
+    // Bash
+    if (has(/^#!.*\b(bash|sh)\b/) || has(/\b(echo|grep|awk|sed)\s+/) && has(/\$\w+|\|\s/)) scores.bash += 2;
+    // Ruby
+    if (has(/\bdef\s+\w+[\s\S]*\bend\b/) || has(/\bputs\b|\brequire\b\s+['"]/)) scores.ruby += 2;
+    // TS / JS (TS first so it can outscore JS on type syntax)
+    if (has(/:\s*(string|number|boolean|void|any)\b|\binterface\s+\w+|\btype\s+\w+\s*=/)) scores.typescript += 3;
+    if (has(/\b(const|let)\s+\w+\s*=/)) scores.javascript += 2;
+    if (has(/=>|\bfunction\s*\(|\bconsole\.log|\bexport\s+(default|const|function)\b/)) scores.javascript += 2;
+    if (has(/\bimport\s+.*\bfrom\s+['"]/)) scores.javascript += 1;
+    // TS inherits JS-ish syntax — fold JS score in so TS wins only with real type markers.
+    if (scores.typescript > 0) scores.typescript += Math.min(scores.javascript, 2);
 
-    // 4. Other languages
-    if (lower.includes('def ') && lower.includes(':')) return 'python';
-    if (lower.includes('public class ') || (lower.includes('private ') && lower.includes('{'))) return 'java';
-    if (lower.includes('func ') && lower.includes('{')) return 'go';
-    if (lower.includes('package ') && lower.includes('import (')) return 'go';
-    if (lower.includes('#include <') || lower.includes('int main(')) return 'cpp';
-    if (lower.includes('select ') && lower.includes('from ')) return 'sql';
-    if (lower.includes('.css {') || lower.includes('display: ') || lower.includes('color: ')) return 'css';
-    if (lower.startsWith('{') || lower.startsWith('[') || (lower.includes(':') && lower.includes('"'))) return 'json';
-
-    return 'javascript';
+    let best = 'text';
+    let bestScore = 0;
+    for (const [lang, s] of Object.entries(scores)) {
+        if (s > bestScore) { bestScore = s; best = lang; }
+    }
+    // Need a real signal to claim a language; otherwise render as plain text
+    // (Prism shows it unstyled) instead of guessing JavaScript.
+    return bestScore >= 2 ? best : 'text';
 };
 
 interface Clip {
